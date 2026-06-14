@@ -9,5 +9,6 @@ entities:
       - streamlit_app.py
       - .streamlit/config.toml
       - app_pages/dashboard.py
+      - app_pages/top_users.py
       - app_pages/account_limits.py
       - app_pages/user_limits.py

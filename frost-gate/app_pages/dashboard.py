@@ -1,7 +1,7 @@
 """Usage Dashboard page.
 
-Displays daily credit usage statistics for Cortex Code across Snowsight
-and CLI surfaces. Queries are executed asynchronously via Snowpark
+Displays daily credit usage statistics for Cortex Code across Snowsight,
+CLI, and Desktop surfaces. Queries are executed asynchronously via Snowpark
 collect_nowait() and cached for 30 minutes.
 """
 
@@ -16,6 +16,7 @@ session = st.session_state["session"]
 USAGE_VIEWS = {
     "Snowsight": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY",
     "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
+    "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
 }
 
 TIME_PERIODS = {
@@ -24,6 +25,7 @@ TIME_PERIODS = {
     "Last 30 days": 30,
     "Last 60 days": 60,
     "Last 90 days": 90,
+    "Last 365 days": 365,
 }
 
 
@@ -78,7 +80,8 @@ def _build_summary_sql(view_name, days):
         SELECT
             USER_NAME,
             DATE(USAGE_TIME) AS USAGE_DATE,
-            SUM(TOKEN_CREDITS) AS DAILY_CREDITS
+            SUM(TOKEN_CREDITS) AS DAILY_CREDITS,
+            COUNT(*) AS DAILY_CALLS
         FROM {view_name}
         WHERE USAGE_TIME >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
         GROUP BY USER_NAME, DATE(USAGE_TIME)
@@ -89,7 +92,8 @@ def _build_summary_sql(view_name, days):
         ROUND(MIN(DAILY_CREDITS), 1) AS MIN_CREDITS_PER_USER_DAY,
         ROUND(MAX(DAILY_CREDITS), 1) AS MAX_CREDITS_PER_USER_DAY,
         COUNT(DISTINCT USER_NAME) AS DISTINCT_USERS,
-        ROUND(SUM(DAILY_CREDITS), 1) AS TOTAL_CREDITS
+        ROUND(SUM(DAILY_CREDITS), 1) AS TOTAL_CREDITS,
+        SUM(DAILY_CALLS) AS TOTAL_REQUESTS
     FROM daily_user
     """
 
@@ -145,7 +149,13 @@ def fetch_all_dashboard_data(_session, days):
 # --- Page layout ---
 
 st.title("Usage Dashboard")
-st.caption("Daily credit usage statistics across Cortex Code surfaces")
+st.caption("Daily AI credit usage statistics across Cortex Code surfaces")
+st.info(
+    "This dashboard shows estimated AI credit consumption from Cortex Code across Snowsight, CLI, and Desktop. "
+    "Data comes from ACCOUNT_USAGE views which may have up to 45 minutes of latency. "
+    "Use the time period selector to adjust the lookback window.",
+    icon=":material/info:",
+)
 
 col_period, col_refresh = st.columns([3, 1])
 with col_period:
@@ -212,24 +222,46 @@ for surface in USAGE_VIEWS:
         max_val = float(row[col_map.get("max_credits_per_user_day", "MAX_CREDITS_PER_USER_DAY")])
         distinct_users = int(row[col_map.get("distinct_users", "DISTINCT_USERS")])
         total_credits = total_float
+        total_requests = int(row[col_map.get("total_requests", "TOTAL_REQUESTS")])
     except Exception as e:
         logger.error("Failed to extract metrics for %s: %s\n%s", surface, e, traceback.format_exc())
         st.error(f"Failed to parse metrics for {surface}: {e}")
         continue
 
-    metric_cols = st.columns(6)
+    metric_cols = st.columns(7)
+
+    # Build sparkline data from daily stats if available
+    stats_result = results.get(f"{surface}_stats")
+    spark_data = {}
+    if not isinstance(stats_result, Exception) and stats_result is not None and not stats_result.empty:
+        stats_df = stats_result
+        col_lower = {c.lower(): c for c in stats_df.columns}
+        date_col = col_lower.get("usage_date", "USAGE_DATE")
+        sorted_stats = stats_df.sort_values(date_col)
+        spark_data["avg"] = pd.to_numeric(sorted_stats[col_lower.get("avg_credits", "AVG_CREDITS")], errors="coerce").fillna(0).tolist()
+        spark_data["median"] = pd.to_numeric(sorted_stats[col_lower.get("median_credits", "MEDIAN_CREDITS")], errors="coerce").fillna(0).tolist()
+        spark_data["min"] = pd.to_numeric(sorted_stats[col_lower.get("min_credits", "MIN_CREDITS")], errors="coerce").fillna(0).tolist()
+        spark_data["max"] = pd.to_numeric(sorted_stats[col_lower.get("max_credits", "MAX_CREDITS")], errors="coerce").fillna(0).tolist()
+        spark_data["users"] = pd.to_numeric(sorted_stats[col_lower.get("active_users", "ACTIVE_USERS")], errors="coerce").fillna(0).tolist()
+        spark_data["total_credits"] = pd.to_numeric(sorted_stats[col_lower.get("total_credits", "TOTAL_CREDITS")], errors="coerce").fillna(0).tolist()
+        calls_col = col_lower.get("total_calls", None)
+        if calls_col and calls_col in stats_df.columns:
+            spark_data["total_calls"] = pd.to_numeric(sorted_stats[calls_col], errors="coerce").fillna(0).tolist()
+
     with metric_cols[0]:
-        st.metric("Avg/User/Day", f"{avg_val:.1f}")
+        st.metric("Avg/User/Day", f"{avg_val:.1f}", chart_data=spark_data.get("avg"), chart_type="area", border=True, help="Average daily AI credits per active user.")
     with metric_cols[1]:
-        st.metric("Median/User/Day", f"{median_val:.1f}")
+        st.metric("Median/User/Day", f"{median_val:.1f}", chart_data=spark_data.get("median"), chart_type="area", border=True, help="Median daily AI credits per active user.")
     with metric_cols[2]:
-        st.metric("Min/User/Day", f"{min_val:.1f}")
+        st.metric("Min/User/Day", f"{min_val:.1f}", chart_data=spark_data.get("min"), chart_type="area", border=True, help="Lowest single-day AI credit usage by any user.")
     with metric_cols[3]:
-        st.metric("Max/User/Day", f"{max_val:.1f}")
+        st.metric("Max/User/Day", f"{max_val:.1f}", chart_data=spark_data.get("max"), chart_type="area", border=True, help="Highest single-day AI credit usage by any user.")
     with metric_cols[4]:
-        st.metric("Active Users", f"{distinct_users}")
+        st.metric("Active Users", f"{distinct_users}", chart_data=spark_data.get("users"), chart_type="area", border=True, help="Number of distinct users with usage in the period.")
     with metric_cols[5]:
-        st.metric("Total Credits", f"{total_credits:.1f}")
+        st.metric("Total AI Credits", f"{total_credits:.1f}", chart_data=spark_data.get("total_credits"), chart_type="area", border=True, help="Sum of all estimated AI credits consumed in the period.")
+    with metric_cols[6]:
+        st.metric("Total Requests", f"{total_requests:,}", chart_data=spark_data.get("total_calls"), chart_type="area", border=True, help="Total number of Cortex Code requests in the period.")
 
     # Get daily stats
     stats_result = results.get(f"{surface}_stats")
@@ -280,22 +312,22 @@ for surface in USAGE_VIEWS:
                     detail_df = stats_df[[date_col, total_col, calls_col, users_col, avg_col, max_col]].copy()
                     detail_df = detail_df.rename(columns={
                         date_col: "Date",
-                        total_col: "Total Credits",
+                        total_col: "Total AI Credits",
                         calls_col: "Total Requests",
                         users_col: "Active Users",
-                        avg_col: "Avg Credits/User",
-                        max_col: "Max Credits/User",
+                        avg_col: "Avg AI Credits/User",
+                        max_col: "Max AI Credits/User",
                     })
                 else:
                     detail_df = stats_df[[date_col, total_col, users_col, avg_col, max_col]].copy()
                     detail_df = detail_df.rename(columns={
                         date_col: "Date",
-                        total_col: "Total Credits",
+                        total_col: "Total AI Credits",
                         users_col: "Active Users",
-                        avg_col: "Avg Credits/User",
-                        max_col: "Max Credits/User",
+                        avg_col: "Avg AI Credits/User",
+                        max_col: "Max AI Credits/User",
                     })
-                for col in ["Total Credits", "Avg Credits/User", "Max Credits/User"]:
+                for col in ["Total AI Credits", "Avg AI Credits/User", "Max AI Credits/User"]:
                     detail_df[col] = pd.to_numeric(detail_df[col], errors="coerce").round(2)
                 detail_df = detail_df.sort_values("Date", ascending=False)
                 st.dataframe(detail_df, use_container_width=True, hide_index=True)
