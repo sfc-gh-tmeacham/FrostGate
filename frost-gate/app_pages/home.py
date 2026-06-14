@@ -190,7 +190,9 @@ with row2[1]:
         st.caption("Apply limit changes to multiple users at once. Scan for existing overrides.")
 
 with row2[2]:
-    st.markdown("")
+    with st.container(border=True):
+        st.markdown(":material/code: **SQL Reference**")
+        st.caption("SQL examples for manually running the commands FrostGate automates.")
 
 st.divider()
 
@@ -219,6 +221,27 @@ with col_r:
     with st.container(border=True):
         st.markdown(":material/bolt: **Pareto Principle**")
         st.caption("Identifies the ~20% of users who drive ~80% of AI credit consumption.")
+
+st.divider()
+
+# --- Scope note ---
+st.info(
+    "FrostGate manages **Cortex Code** AI credit limits only. It does not cover AI Functions "
+    "(such as CORTEX.COMPLETE, CORTEX.SUMMARIZE, etc.) which have separate billing and are not "
+    "controlled by these parameters.",
+    icon=":material/info:",
+)
+
+# --- References ---
+st.markdown("##### References")
+st.markdown(
+    "- [Cost Controls for Cortex Code](https://docs.snowflake.com/en/user-guide/cortex-code/credit-usage-limit)\n"
+    "- [CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY View](https://docs.snowflake.com/en/sql-reference/account-usage/cortex_code_snowsight_usage_history)\n"
+    "- [CORTEX_CODE_CLI_USAGE_HISTORY View](https://docs.snowflake.com/en/sql-reference/account-usage/cortex_code_cli_usage_history)\n"
+    "- [CORTEX_CODE_DESKTOP_USAGE_HISTORY View](https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-desktop/cortex-code-desktop-usage-history-view)\n"
+    "- [ALTER ACCOUNT](https://docs.snowflake.com/en/sql-reference/sql/alter-account)\n"
+    "- [ALTER USER](https://docs.snowflake.com/en/sql-reference/sql/alter-user)\n"
+)
 
 st.divider()
 st.warning(

@@ -81,7 +81,14 @@ def get_user_details(_session, username):
             user_rows = _session.sql(f"SHOW USERS LIKE '{username}'").collect()
             if user_rows:
                 user_dict = {k.lower(): v for k, v in user_rows[0].as_dict().items()}
-                last_login = str(user_dict.get("last_success_login", "—") or "—")
+                raw_login = user_dict.get("last_success_login", None)
+                if raw_login:
+                    from datetime import datetime
+                    try:
+                        dt = datetime.fromisoformat(str(raw_login))
+                        last_login = dt.strftime("%b %d, %Y %I:%M %p")
+                    except (ValueError, TypeError):
+                        last_login = str(raw_login).split(".")[0]
         except Exception:
             pass
 
@@ -307,7 +314,7 @@ if selected_user:
             with form_cols[i]:
                 user_actions[label] = st.selectbox(
                     f"{label}",
-                    options=["No change", "Set limit", "Block usage", "Unset (inherit account)"],
+                    options=["No change", "Set limit", "Set unlimited", "Block usage", "Unset (inherit account)"],
                     key=f"user_action_{label}",
                     help=f"Set a per-user override for {label}, or unset to inherit the account default.",
                 )
@@ -322,8 +329,9 @@ if selected_user:
 
         user_submitted = st.form_submit_button("Apply User Changes")
         if user_submitted:
-            logger.info("User form submitted for user: %s", selected_user)
-            changes_made = False
+            app_user = st.session_state.get("current_user", "UNKNOWN")
+            logger.info("[%s] User form submitted for user: %s", app_user, selected_user)
+            changes_made = []
             safe_user = selected_user.replace('"', '""')
             for label in PARAMS:
                 action = user_actions[label]
@@ -331,36 +339,43 @@ if selected_user:
                 if action == "No change":
                     continue
                 elif action == "Unset (inherit account)":
-                    logger.info("Unsetting user %s param: %s", selected_user, param)
+                    logger.info("[%s] Unsetting user %s param: %s", app_user, selected_user, param)
                     try:
                         session.sql(f'ALTER USER "{safe_user}" UNSET {param}').collect()
-                        logger.info("Successfully unset user %s param: %s", selected_user, param)
-                        changes_made = True
+                        logger.info("[%s] Successfully unset user %s param: %s", app_user, selected_user, param)
+                        changes_made.append(f"**{label}**: unset (inheriting account default)")
                     except Exception as e:
-                        logger.error("Failed to unset user %s param %s: %s", selected_user, param, e)
+                        logger.error("[%s] Failed to unset user %s param %s: %s", app_user, selected_user, param, e)
                         st.error(f"Failed to unset {label} for {selected_user}: {e}")
+                elif action == "Set unlimited":
+                    logger.info("[%s] Setting user %s param %s = -1 (unlimited)", app_user, selected_user, param)
+                    try:
+                        session.sql(f'ALTER USER "{safe_user}" SET {param} = -1').collect()
+                        logger.info("[%s] Successfully set user %s param %s = -1", app_user, selected_user, param)
+                        changes_made.append(f"**{label}**: set to unlimited (-1)")
+                    except Exception as e:
+                        logger.error("[%s] Failed to set user %s param %s = -1: %s", app_user, selected_user, param, e)
+                        st.error(f"Failed to set {label} unlimited for {selected_user}: {e}")
                 elif action == "Block usage":
-                    logger.info("Blocking user %s param: %s (setting to 0)", selected_user, param)
                     try:
                         session.sql(f'ALTER USER "{safe_user}" SET {param} = 0').collect()
-                        logger.info("Successfully blocked user %s param: %s", selected_user, param)
-                        changes_made = True
+                        logger.info("[%s] Successfully blocked user %s param: %s", app_user, selected_user, param)
+                        changes_made.append(f"**{label}**: blocked (0)")
                     except Exception as e:
-                        logger.error("Failed to block user %s param %s: %s", selected_user, param, e)
+                        logger.error("[%s] Failed to block user %s param %s: %s", app_user, selected_user, param, e)
                         st.error(f"Failed to block {label} for {selected_user}: {e}")
                 else:
                     val = user_inputs[label]
-                    logger.info("Setting user %s param %s = %d", selected_user, param, int(val))
+                    logger.info("[%s] Setting user %s param %s = %d", app_user, selected_user, param, int(val))
                     try:
                         session.sql(f'ALTER USER "{safe_user}" SET {param} = {int(val)}').collect()
-                        logger.info("Successfully set user %s param %s = %d", selected_user, param, int(val))
-                        changes_made = True
+                        logger.info("[%s] Successfully set user %s param %s = %d", app_user, selected_user, param, int(val))
+                        changes_made.append(f"**{label}**: set to {int(val)} AI credits/day")
                     except Exception as e:
-                        logger.error("Failed to set user %s param %s = %d: %s", selected_user, param, int(val), e)
+                        logger.error("[%s] Failed to set user %s param %s = %d: %s", app_user, selected_user, param, int(val), e)
                         st.error(f"Failed to set {label} for {selected_user}: {e}")
             if changes_made:
-                st.success(f"Limits updated for {selected_user}.")
-                st.rerun()
+                st.success(f"Limits updated for **{selected_user}**:\n\n" + "\n\n".join(changes_made))
             else:
                 st.info("No changes selected.")
 

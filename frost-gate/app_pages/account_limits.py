@@ -129,7 +129,7 @@ with st.form("account_form"):
         with form_cols[i]:
             account_actions[label] = st.selectbox(
                 f"{label}",
-                options=["No change", "Set limit", "Block usage", "Unset (unlimited)"],
+                options=["No change", "Set limit", "Set unlimited", "Block usage", "Unset (unlimited)"],
                 key=f"account_action_{label}",
                 help=f"Choose an action for the {label} daily AI credit limit.",
             )
@@ -144,43 +144,52 @@ with st.form("account_form"):
 
     submitted = st.form_submit_button("Apply Account Changes")
     if submitted:
-        logger.info("Account form submitted")
-        changes_made = False
+        app_user = st.session_state.get("current_user", "UNKNOWN")
+        logger.info("[%s] Account form submitted", app_user)
+        changes_made = []
         for label in PARAMS:
             action = account_actions[label]
             param = PARAMS[label]
             if action == "No change":
                 continue
             elif action == "Unset (unlimited)":
-                logger.info("Unsetting account param: %s", param)
+                logger.info("[%s] Unsetting account param: %s", app_user, param)
                 try:
                     session.sql(f"ALTER ACCOUNT UNSET {param}").collect()
-                    logger.info("Successfully unset account param: %s", param)
-                    changes_made = True
+                    logger.info("[%s] Successfully unset account param: %s", app_user, param)
+                    changes_made.append(f"**{label}**: unset (unlimited)")
                 except Exception as e:
-                    logger.error("Failed to unset account param %s: %s", param, e)
+                    logger.error("[%s] Failed to unset account param %s: %s", app_user, param, e)
                     st.error(f"Failed to unset {label}: {e}")
+            elif action == "Set unlimited":
+                logger.info("[%s] Setting account param %s = -1 (unlimited)", app_user, param)
+                try:
+                    session.sql(f"ALTER ACCOUNT SET {param} = -1").collect()
+                    logger.info("[%s] Successfully set account param %s = -1", app_user, param)
+                    changes_made.append(f"**{label}**: set to unlimited (-1)")
+                except Exception as e:
+                    logger.error("[%s] Failed to set account param %s = -1: %s", app_user, param, e)
+                    st.error(f"Failed to set {label} unlimited: {e}")
             elif action == "Block usage":
-                logger.info("Blocking account param: %s (setting to 0)", param)
+                logger.info("[%s] Blocking account param: %s (setting to 0)", app_user, param)
                 try:
                     session.sql(f"ALTER ACCOUNT SET {param} = 0").collect()
-                    logger.info("Successfully blocked account param: %s", param)
-                    changes_made = True
+                    logger.info("[%s] Successfully blocked account param: %s", app_user, param)
+                    changes_made.append(f"**{label}**: blocked (0)")
                 except Exception as e:
-                    logger.error("Failed to block account param %s: %s", param, e)
+                    logger.error("[%s] Failed to block account param %s: %s", app_user, param, e)
                     st.error(f"Failed to block {label}: {e}")
             else:
                 val = account_inputs[label]
-                logger.info("Setting account param %s = %d", param, int(val))
+                logger.info("[%s] Setting account param %s = %d", app_user, param, int(val))
                 try:
                     session.sql(f"ALTER ACCOUNT SET {param} = {int(val)}").collect()
-                    logger.info("Successfully set account param %s = %d", param, int(val))
-                    changes_made = True
+                    logger.info("[%s] Successfully set account param %s = %d", app_user, param, int(val))
+                    changes_made.append(f"**{label}**: set to {int(val)} AI credits/day")
                 except Exception as e:
-                    logger.error("Failed to set account param %s = %d: %s", param, int(val), e)
+                    logger.error("[%s] Failed to set account param %s = %d: %s", app_user, param, int(val), e)
                     st.error(f"Failed to set {label}: {e}")
         if changes_made:
-            st.success("Account limits updated.")
-            st.rerun()
+            st.success("Account limits updated successfully:\n\n" + "\n\n".join(changes_made))
         else:
             st.info("No changes selected.")

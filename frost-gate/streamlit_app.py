@@ -30,7 +30,8 @@ st.title(":material/ac_unit: FrostGate")
 
 conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 st.session_state["session"] = conn.session()
-logger.info("Session established")
+st.session_state["current_user"] = conn.session().sql("SELECT CURRENT_USER()").collect()[0][0]
+logger.info("Session established for user: %s", st.session_state["current_user"])
 
 page = st.navigation([
     st.Page("app_pages/home.py", title="Home", icon=":material/home:", default=True),
@@ -39,6 +40,7 @@ page = st.navigation([
     st.Page("app_pages/account_limits.py", title="Account Limits", icon=":material/tune:"),
     st.Page("app_pages/user_limits.py", title="User Limits", icon=":material/person:"),
     st.Page("app_pages/bulk_update.py", title="Bulk User Update", icon=":material/group:"),
+    st.Page("app_pages/sql_reference.py", title="SQL Reference", icon=":material/code:"),
 ], position="top")
 
 page.run()
