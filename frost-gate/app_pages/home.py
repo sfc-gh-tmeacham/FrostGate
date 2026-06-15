@@ -14,14 +14,8 @@ session = st.session_state["session"]
 
 
 @st.cache_data(ttl=3600)
-def get_system_health(_session):
-    """Fetch account limit status and 7-day usage summary for the homepage."""
-    # Submit async queries for account-level limit parameters (one per surface)
-    limit_jobs = {}
-    for label, param in PARAMS.items():
-        limit_jobs[label] = _session.sql(f"SHOW PARAMETERS LIKE '{param}' IN ACCOUNT").collect_nowait()
-
-    # Submit async queries for 7-day usage totals per surface
+def get_usage_summary(_session):
+    """Fetch 7-day usage summary for the homepage (cached 1 hour)."""
     usage_jobs = {}
     for label, view in USAGE_VIEWS.items():
         usage_jobs[label] = _session.sql(f"""
@@ -33,22 +27,6 @@ def get_system_health(_session):
             WHERE USAGE_TIME >= DATEADD('day', -7, CURRENT_TIMESTAMP())
         """).collect_nowait()
 
-    # Collect limit results; default to -1 (unlimited) on failure
-    limits = {}
-    for label, job in limit_jobs.items():
-        try:
-            rows = job.result()
-            if rows:
-                row = normalize_row(rows[0])
-                value = str(row.get("value", "-1"))
-                level = str(row.get("level", "")).upper()
-                limits[label] = {"value": value, "level": level}
-            else:
-                limits[label] = {"value": "-1", "level": "DEFAULT"}
-        except Exception:
-            limits[label] = {"value": "-1", "level": "DEFAULT"}
-
-    # Collect usage results; default to zeros on failure
     usage = {}
     for label, job in usage_jobs.items():
         try:
@@ -65,7 +43,30 @@ def get_system_health(_session):
         except Exception:
             usage[label] = {"credits": 0.0, "requests": 0, "users": 0}
 
-    return limits, usage
+    return usage
+
+
+def get_account_limits(_session):
+    """Fetch account limit parameters (not cached — always fresh)."""
+    limit_jobs = {}
+    for label, param in PARAMS.items():
+        limit_jobs[label] = _session.sql(f"SHOW PARAMETERS LIKE '{param}' IN ACCOUNT").collect_nowait()
+
+    limits = {}
+    for label, job in limit_jobs.items():
+        try:
+            rows = job.result()
+            if rows:
+                row = normalize_row(rows[0])
+                value = str(row.get("value", "-1"))
+                level = str(row.get("level", "")).upper()
+                limits[label] = {"value": value, "level": level}
+            else:
+                limits[label] = {"value": "-1", "level": "DEFAULT"}
+        except Exception:
+            limits[label] = {"value": "-1", "level": "DEFAULT"}
+
+    return limits
 
 # --- Page Layout ---
 
@@ -114,9 +115,10 @@ st.divider()
 
 # --- System Health ---
 st.markdown("##### System Health")
-st.caption("Live account limit status and 7-day usage summary. Cached for 1 hour.")
+st.caption("Account limits are fetched live. Usage summary is cached for 1 hour.")
 
-limits, usage = get_system_health(session)
+limits = get_account_limits(session)
+usage = get_usage_summary(session)
 
 # Display current account-level limit for each surface as metric cards.
 # Values: -1 = unlimited, 0 = blocked, positive = daily credit cap.
@@ -256,6 +258,7 @@ st.info(
 st.markdown("##### References")
 st.markdown(
     "- [Cost Controls for Cortex Code](https://docs.snowflake.com/en/user-guide/cortex-code/credit-usage-limit)\n"
+    "- [ALLOWED_INTERFACES Parameter](https://docs.snowflake.com/en/sql-reference/parameters#allowed-interfaces)\n"
     "- [CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY View](https://docs.snowflake.com/en/sql-reference/account-usage/cortex_code_snowsight_usage_history)\n"
     "- [CORTEX_CODE_CLI_USAGE_HISTORY View](https://docs.snowflake.com/en/sql-reference/account-usage/cortex_code_cli_usage_history)\n"
     "- [CORTEX_CODE_DESKTOP_USAGE_HISTORY View](https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-desktop/cortex-code-desktop-usage-history-view)\n"
