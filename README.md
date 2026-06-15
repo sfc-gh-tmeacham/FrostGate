@@ -6,6 +6,8 @@
 
 **Cortex Code AI Credit Usage Limit Manager**
 
+> **This application is intended for exclusive use by Snowflake account administrators.** It requires the ACCOUNTADMIN role (or a custom role with equivalent privileges) to read usage history and modify account/user parameters.
+
 A Streamlit-in-Snowflake application for monitoring and controlling daily AI credit consumption across Cortex Code surfaces (Snowsight, CLI, and Desktop).
 
 ## Overview
