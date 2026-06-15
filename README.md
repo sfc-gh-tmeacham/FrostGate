@@ -30,6 +30,16 @@ FrostGate provides Snowflake administrators with a unified interface to:
 | Bulk User Update | Apply changes to multiple users with role/tag filtering |
 | SQL Reference | SQL examples for manual operations |
 
+## Quick Start
+
+New to FrostGate? Follow these steps to set up credit controls for the first time:
+
+1. **Check current usage** — Go to the **Usage Dashboard** to see how many AI credits are being consumed across surfaces.
+2. **Set account-level limits** — Navigate to **Account Limits** and set a daily credit cap (e.g. 25 AI credits/day) for each surface. This becomes the default for all users.
+3. **Identify power users** — Use the **Top Users** page to find who consumes the most credits.
+4. **Grant overrides where needed** — On the **User Limits** page, set higher per-user limits for users who legitimately need more.
+5. **Monitor ongoing usage** — Check the dashboard periodically to ensure limits are effective and adjust as needed.
+
 ## Requirements
 
 - **Role**: ACCOUNTADMIN (or equivalent privileges)
