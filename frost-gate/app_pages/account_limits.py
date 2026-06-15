@@ -5,53 +5,11 @@ limit parameters at the account level. These serve as defaults for all
 users unless overridden per-user.
 """
 
-import logging
 import streamlit as st
 
-from app_pages.common import PARAMS, get_param_value, display_limit_value
+from app_pages.common import PARAMS, display_limit_value, fetch_params_async, apply_limit_action
 
-logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
-
-
-def get_account_params():
-    """Fetch current account-level Cortex Code credit limit parameters.
-
-    Submits all SHOW PARAMETERS queries asynchronously via Snowpark
-    collect_nowait() and collects results in parallel.
-
-    Returns:
-        Dict mapping surface labels (CLI, Desktop, Snowsight) to dicts
-        containing 'value', 'level', and 'param' keys.
-    """
-    logger.info("Fetching account-level parameters (async)")
-
-    # Submit all queries asynchronously
-    async_jobs = {}
-    for label, param in PARAMS.items():
-        sql = f"SHOW PARAMETERS LIKE '{param}' IN ACCOUNT"
-        async_jobs[label] = session.sql(sql).collect_nowait()
-
-    # Collect results
-    results = {}
-    for label, job in async_jobs.items():
-        param = PARAMS[label]
-        try:
-            rows = job.result()
-            if rows:
-                row = rows[0].as_dict()
-                row_lower = {k.lower(): v for k, v in row.items()}
-                value = str(row_lower.get("value", "-1"))
-                level = str(row_lower.get("level", "")).upper()
-                results[label] = {"value": value, "level": level, "param": param}
-                logger.info("Account param %s: value=%s, level=%s", label, value, level)
-            else:
-                results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
-        except Exception as e:
-            logger.error("Failed to fetch account param %s: %s", label, e)
-            results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
-    return results
-
 
 
 # --- Page layout ---
@@ -65,7 +23,7 @@ st.info(
     icon=":material/info:",
 )
 
-account_params = get_account_params()
+account_params = fetch_params_async(session, "IN ACCOUNT")
 
 cols = st.columns(3)
 for i, (label, info) in enumerate(account_params.items()):
@@ -104,52 +62,25 @@ with st.form("account_form"):
     submitted = st.form_submit_button("Apply Account Changes")
     if submitted:
         app_user = st.session_state.get("current_user", "UNKNOWN")
-        logger.info("[%s] Account form submitted", app_user)
         changes_made = []
-        # Process each surface's selected action and execute the corresponding SQL
         for label in PARAMS:
-            action = account_actions[label]
-            param = PARAMS[label]
-            if action == "No change":
+            if account_actions[label] == "No change":
                 continue
-            elif action == "Unset (unlimited)":
-                logger.info("[%s] Unsetting account param: %s", app_user, param)
-                try:
-                    session.sql(f"ALTER ACCOUNT UNSET {param}").collect()
-                    logger.info("[%s] Successfully unset account param: %s", app_user, param)
-                    changes_made.append(f"**{label}**: unset (unlimited)")
-                except Exception as e:
-                    logger.error("[%s] Failed to unset account param %s: %s", app_user, param, e)
-                    st.error(f"Failed to unset {label}: {e}")
-            elif action == "Set unlimited":
-                logger.info("[%s] Setting account param %s = -1 (unlimited)", app_user, param)
-                try:
-                    session.sql(f"ALTER ACCOUNT SET {param} = -1").collect()
-                    logger.info("[%s] Successfully set account param %s = -1", app_user, param)
-                    changes_made.append(f"**{label}**: set to unlimited (-1)")
-                except Exception as e:
-                    logger.error("[%s] Failed to set account param %s = -1: %s", app_user, param, e)
-                    st.error(f"Failed to set {label} unlimited: {e}")
-            elif action == "Block usage":
-                logger.info("[%s] Blocking account param: %s (setting to 0)", app_user, param)
-                try:
-                    session.sql(f"ALTER ACCOUNT SET {param} = 0").collect()
-                    logger.info("[%s] Successfully blocked account param: %s", app_user, param)
-                    changes_made.append(f"**{label}**: blocked (0)")
-                except Exception as e:
-                    logger.error("[%s] Failed to block account param %s: %s", app_user, param, e)
-                    st.error(f"Failed to block {label}: {e}")
-            else:
-                val = account_inputs[label]
-                logger.info("[%s] Setting account param %s = %d", app_user, param, int(val))
-                try:
-                    session.sql(f"ALTER ACCOUNT SET {param} = {int(val)}").collect()
-                    logger.info("[%s] Successfully set account param %s = %d", app_user, param, int(val))
-                    changes_made.append(f"**{label}**: set to {int(val)} AI credits/day")
-                except Exception as e:
-                    logger.error("[%s] Failed to set account param %s = %d: %s", app_user, param, int(val), e)
-                    st.error(f"Failed to set {label}: {e}")
+            try:
+                result = apply_limit_action(
+                    session,
+                    account_actions[label],
+                    PARAMS[label],
+                    label,
+                    account_inputs[label],
+                    "ACCOUNT",
+                    app_user,
+                )
+                if result:
+                    changes_made.append(result)
+            except Exception as e:
+                st.error(f"Failed to update {label}: {e}")
         if changes_made:
             st.success("Account limits updated successfully:\n\n" + "\n\n".join(changes_made))
-        else:
+        elif not any(a != "No change" for a in account_actions.values()):
             st.info("No changes selected.")

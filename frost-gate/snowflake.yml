@@ -3,12 +3,25 @@ definition_version: 2
 entities:
   streamlit_app:
     type: streamlit
+    identifier:
+      database: FROSTGATE
+      schema: APP
+      name: FROST_GATE
+    title: frost-gate
+    query_warehouse: FROSTGATE_WH
+    compute_pool: SYSTEM_COMPUTE_POOL_CPU
+    run_mode: SpcsOnly
+    execute_as: OWNER
     main_file: streamlit_app.py
     artifacts:
       - pyproject.toml
       - streamlit_app.py
       - .streamlit/config.toml
+      - app_pages/common.py
+      - app_pages/home.py
       - app_pages/dashboard.py
       - app_pages/top_users.py
       - app_pages/account_limits.py
       - app_pages/user_limits.py
+      - app_pages/bulk_update.py
+      - app_pages/sql_reference.py

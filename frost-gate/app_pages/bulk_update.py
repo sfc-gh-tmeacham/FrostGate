@@ -6,53 +6,17 @@ and view all users who currently have per-user overrides.
 
 import logging
 import streamlit as st
-import pandas as pd
 
-from app_pages.common import PARAMS, display_limit_value
+from app_pages.common import PARAMS, display_limit_value, fetch_params_async, apply_limit_action, get_users_df
 
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
 
-def get_users(sess):
-    """Fetch user details from the account as a DataFrame."""
-    df = pd.DataFrame([r.as_dict() for r in sess.sql("SHOW USERS").collect()])
-    col_map = {c.lower(): c for c in df.columns}
-    result = pd.DataFrame()
-    result["User"] = df[col_map.get("name", "name")]
-    result["Display Name"] = df[col_map.get("display_name", "display_name")].fillna("—")
-    result["Email"] = df[col_map.get("email", "email")].fillna("—")
-    result["Default Role"] = df[col_map.get("default_role", "default_role")].fillna("—")
-    result["Last Login"] = df[col_map.get("last_success_login", "last_success_login")].fillna("Never")
-    result["Disabled"] = df[col_map.get("disabled", "disabled")].fillna("false")
-    return result.sort_values("User").reset_index(drop=True)
-
-
 def get_user_params(user):
     """Fetch current per-user Cortex Code credit limit parameters."""
-    safe_user = user.replace("'", "''")
-    async_jobs = {}
-    for label, param in PARAMS.items():
-        sql = f"SHOW PARAMETERS LIKE '{param}' FOR USER \"{user}\""
-        async_jobs[label] = session.sql(sql).collect_nowait()
-
-    results = {}
-    for label, job in async_jobs.items():
-        param = PARAMS[label]
-        try:
-            rows = job.result()
-            if rows:
-                row = rows[0].as_dict()
-                row_lower = {k.lower(): v for k, v in row.items()}
-                value = str(row_lower.get("value", "-1"))
-                level = str(row_lower.get("level", "")).upper()
-                results[label] = {"value": value, "level": level, "param": param}
-            else:
-                results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
-        except Exception as e:
-            logger.error("Failed to fetch param %s for %s: %s", label, user, e)
-            results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
-    return results
+    safe_user = user.replace('"', '""')
+    return fetch_params_async(session, f'FOR USER "{safe_user}"')
 
 
 # --- Page layout ---
@@ -64,7 +28,7 @@ st.info(
     icon=":material/group:",
 )
 
-users_df = get_users(session)
+users_df = get_users_df(session)
 
 # --- Filters: narrow down the user list by role grants or tag assignments ---
 roles_df = session.sql("SHOW ROLES").to_pandas()
@@ -104,7 +68,6 @@ with filter_cols[1]:
 display_df = users_df
 
 if role_filter:
-    # Query GRANTS_TO_USERS to find users with the selected role(s)
     placeholders = ", ".join(f"'{r}'" for r in role_filter)
     role_users_df = session.sql(f"""
         SELECT DISTINCT GRANTEE_NAME AS USER_NAME
@@ -183,55 +146,34 @@ if bulk_users:
             app_user = st.session_state.get("current_user", "UNKNOWN")
             logger.info("[%s] Bulk update submitted for %d users", app_user, len(bulk_users))
             changes_made = []
-            # Iterate over each selected user and apply the chosen action per surface
             for user in bulk_users:
                 safe_user = user.replace('"', '""')
+                alter_target = f'USER "{safe_user}"'
                 user_changes = []
                 for label in PARAMS:
-                    action = bulk_actions[label]
-                    param = PARAMS[label]
-                    if action == "No change":
+                    if bulk_actions[label] == "No change":
                         continue
-                    elif action == "Unset (inherit account)":
-                        try:
-                            session.sql(f'ALTER USER "{safe_user}" UNSET {param}').collect()
-                            logger.info("[%s] Unset %s for %s", app_user, param, user)
-                            user_changes.append(f"{label} → unset")
-                        except Exception as e:
-                            logger.error("[%s] Failed: %s for %s: %s", app_user, param, user, e)
-                            st.error(f"Failed to unset {label} for {user}: {e}")
-                    elif action == "Set unlimited":
-                        try:
-                            session.sql(f'ALTER USER "{safe_user}" SET {param} = -1').collect()
-                            logger.info("[%s] Set %s = -1 (unlimited) for %s", app_user, param, user)
-                            user_changes.append(f"{label} → unlimited (-1)")
-                        except Exception as e:
-                            logger.error("[%s] Failed to set %s = -1 for %s: %s", app_user, param, user, e)
-                            st.error(f"Failed to set {label} unlimited for {user}: {e}")
-                    elif action == "Block usage":
-                        try:
-                            session.sql(f'ALTER USER "{safe_user}" SET {param} = 0').collect()
-                            logger.info("[%s] Blocked %s for %s", app_user, param, user)
-                            user_changes.append(f"{label} → blocked")
-                        except Exception as e:
-                            logger.error("[%s] Failed to block %s for %s: %s", app_user, param, user, e)
-                            st.error(f"Failed to block {label} for {user}: {e}")
-                    else:
-                        val = bulk_inputs[label]
-                        try:
-                            session.sql(f'ALTER USER "{safe_user}" SET {param} = {int(val)}').collect()
-                            logger.info("[%s] Set %s = %d for %s", app_user, param, int(val), user)
-                            user_changes.append(f"{label} → {int(val)} AI credits/day")
-                        except Exception as e:
-                            logger.error("[%s] Failed: %s = %d for %s: %s", app_user, param, int(val), user, e)
-                            st.error(f"Failed to set {label} for {user}: {e}")
+                    try:
+                        result = apply_limit_action(
+                            session,
+                            bulk_actions[label],
+                            PARAMS[label],
+                            label,
+                            bulk_inputs[label],
+                            alter_target,
+                            app_user,
+                        )
+                        if result:
+                            user_changes.append(result.replace(f"**{label}**: ", f"{label} → "))
+                    except Exception as e:
+                        st.error(f"Failed to update {label} for {user}: {e}")
                 if user_changes:
                     changes_made.append(f"**{user}**: " + ", ".join(user_changes))
             if changes_made:
                 st.success(
                     f"Limits applied to {len(bulk_users)} user(s):\n\n" + "\n\n".join(changes_made)
                 )
-            else:
+            elif not any(a != "No change" for a in bulk_actions.values()):
                 st.info("No changes selected.")
 
 st.divider()

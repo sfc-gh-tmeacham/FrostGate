@@ -7,7 +7,7 @@ and guides new users on how to use each section.
 import logging
 import streamlit as st
 
-from app_pages.common import PARAMS, USAGE_VIEWS
+from app_pages.common import PARAMS, USAGE_VIEWS, normalize_row
 
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
@@ -39,7 +39,7 @@ def get_system_health(_session):
         try:
             rows = job.result()
             if rows:
-                row = {k.lower(): v for k, v in rows[0].as_dict().items()}
+                row = normalize_row(rows[0])
                 value = str(row.get("value", "-1"))
                 level = str(row.get("level", "")).upper()
                 limits[label] = {"value": value, "level": level}
@@ -54,7 +54,7 @@ def get_system_health(_session):
         try:
             rows = job.result()
             if rows:
-                row = {k.lower(): v for k, v in rows[0].as_dict().items()}
+                row = normalize_row(rows[0])
                 usage[label] = {
                     "credits": float(row.get("total_credits", 0)),
                     "requests": int(row.get("total_requests", 0)),
@@ -78,7 +78,28 @@ st.markdown(
 )
 st.caption("Use the navigation tabs at the top of the page to switch between sections.")
 
-st.markdown("")
+# --- What is FrostGate ---
+st.markdown("##### What is FrostGate?")
+st.markdown(
+    "Cortex Code consumes **AI credits** (separate from warehouse compute credits) each time a user "
+    "interacts with it. Snowflake exposes account-level and user-level parameters to cap daily usage. "
+    "FrostGate wraps these controls in a friendly UI with usage dashboards, trend analysis, and bulk management."
+)
+
+# --- Quick Start ---
+st.markdown("##### Quick Start")
+st.markdown(
+    "New to FrostGate? Follow these steps to set up credit controls for the first time:"
+)
+st.markdown(
+    "1. **Check current usage** — Go to the **Usage Dashboard** to see how many AI credits are being consumed across surfaces.\n"
+    "2. **Set account-level limits** — Navigate to **Account Limits** and set a daily credit cap (e.g. 25 AI credits/day) for each surface. This becomes the default for all users.\n"
+    "3. **Identify power users** — Use the **Top Users** page to find who consumes the most credits.\n"
+    "4. **Grant overrides where needed** — On the **User Limits** page, set higher per-user limits for users who legitimately need more.\n"
+    "5. **Monitor ongoing usage** — Check the dashboard periodically to ensure limits are effective and adjust as needed."
+)
+
+st.divider()
 
 # --- Quick stats: static overview metrics for at-a-glance context ---
 stat_cols = st.columns(3)
@@ -139,16 +160,6 @@ for i, (label, data) in enumerate(usage.items()):
             border=True,
             help=f"Total AI credits consumed via {label} in the last 7 days, with active user and request counts.",
         )
-
-st.divider()
-
-# --- What is FrostGate ---
-st.markdown("##### What is FrostGate?")
-st.markdown(
-    "Cortex Code consumes **AI credits** (separate from warehouse compute credits) each time a user "
-    "interacts with it. Snowflake exposes account-level and user-level parameters to cap daily usage. "
-    "FrostGate wraps these controls in a friendly UI with usage dashboards, trend analysis, and bulk management."
-)
 
 st.divider()
 

@@ -8,7 +8,7 @@ users, and scanning all users for existing overrides.
 import logging
 import streamlit as st
 
-from app_pages.common import PARAMS, USAGE_VIEWS, get_param_value, display_limit_value, get_user_list
+from app_pages.common import PARAMS, USAGE_VIEWS, TIME_PERIODS, display_limit_value, get_user_list, fetch_params_async, apply_limit_action, normalize_row
 
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
@@ -34,7 +34,7 @@ def get_user_details(_session, username):
         try:
             user_rows = _session.sql(f"SHOW USERS LIKE '{username}'").collect()
             if user_rows:
-                user_dict = {k.lower(): v for k, v in user_rows[0].as_dict().items()}
+                user_dict = normalize_row(user_rows[0])
                 raw_login = user_dict.get("last_success_login", None)
                 if raw_login:
                     from datetime import datetime
@@ -61,45 +61,9 @@ def get_user_details(_session, username):
 
 
 def get_user_params(username):
-    """Fetch Cortex Code credit limit parameters for a specific user.
-
-    Submits all SHOW PARAMETERS queries asynchronously via Snowpark
-    collect_nowait() and collects results in parallel.
-
-    Args:
-        username: The Snowflake username to query.
-
-    Returns:
-        Dict mapping surface labels to dicts with 'value', 'level', 'param'.
-    """
-    logger.info("Fetching parameters for user: %s", username)
+    """Fetch Cortex Code credit limit parameters for a specific user."""
     safe_user = username.replace('"', '""')
-
-    # Submit all queries asynchronously
-    async_jobs = {}
-    for label, param in PARAMS.items():
-        sql = f"SHOW PARAMETERS LIKE '{param}' IN USER \"{safe_user}\""
-        async_jobs[label] = session.sql(sql).collect_nowait()
-
-    # Collect results
-    results = {}
-    for label, job in async_jobs.items():
-        param = PARAMS[label]
-        try:
-            rows = job.result()
-            if rows:
-                row = rows[0].as_dict()
-                row_lower = {k.lower(): v for k, v in row.items()}
-                value = str(row_lower.get("value", "-1"))
-                level = str(row_lower.get("level", "")).upper()
-                results[label] = {"value": value, "level": level, "param": param}
-                logger.info("User %s param %s: value=%s, level=%s", username, label, value, level)
-            else:
-                results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
-        except Exception as e:
-            logger.error("Failed to fetch user %s param %s: %s", username, label, e)
-            results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
-    return results
+    return fetch_params_async(session, f'IN USER "{safe_user}"')
 
 
 
@@ -270,66 +234,40 @@ if selected_user:
         user_submitted = st.form_submit_button("Apply User Changes")
         if user_submitted:
             app_user = st.session_state.get("current_user", "UNKNOWN")
-            logger.info("[%s] User form submitted for user: %s", app_user, selected_user)
-            changes_made = []
             safe_user = selected_user.replace('"', '""')
-            # Execute the selected action for each surface via ALTER USER SQL
+            alter_target = f'USER "{safe_user}"'
+            changes_made = []
             for label in PARAMS:
-                action = user_actions[label]
-                param = PARAMS[label]
-                if action == "No change":
+                if user_actions[label] == "No change":
                     continue
-                elif action == "Unset (inherit account)":
-                    logger.info("[%s] Unsetting user %s param: %s", app_user, selected_user, param)
-                    try:
-                        session.sql(f'ALTER USER "{safe_user}" UNSET {param}').collect()
-                        logger.info("[%s] Successfully unset user %s param: %s", app_user, selected_user, param)
-                        changes_made.append(f"**{label}**: unset (inheriting account default)")
-                    except Exception as e:
-                        logger.error("[%s] Failed to unset user %s param %s: %s", app_user, selected_user, param, e)
-                        st.error(f"Failed to unset {label} for {selected_user}: {e}")
-                elif action == "Set unlimited":
-                    logger.info("[%s] Setting user %s param %s = -1 (unlimited)", app_user, selected_user, param)
-                    try:
-                        session.sql(f'ALTER USER "{safe_user}" SET {param} = -1').collect()
-                        logger.info("[%s] Successfully set user %s param %s = -1", app_user, selected_user, param)
-                        changes_made.append(f"**{label}**: set to unlimited (-1)")
-                    except Exception as e:
-                        logger.error("[%s] Failed to set user %s param %s = -1: %s", app_user, selected_user, param, e)
-                        st.error(f"Failed to set {label} unlimited for {selected_user}: {e}")
-                elif action == "Block usage":
-                    try:
-                        session.sql(f'ALTER USER "{safe_user}" SET {param} = 0').collect()
-                        logger.info("[%s] Successfully blocked user %s param: %s", app_user, selected_user, param)
-                        changes_made.append(f"**{label}**: blocked (0)")
-                    except Exception as e:
-                        logger.error("[%s] Failed to block user %s param %s: %s", app_user, selected_user, param, e)
-                        st.error(f"Failed to block {label} for {selected_user}: {e}")
-                else:
-                    val = user_inputs[label]
-                    logger.info("[%s] Setting user %s param %s = %d", app_user, selected_user, param, int(val))
-                    try:
-                        session.sql(f'ALTER USER "{safe_user}" SET {param} = {int(val)}').collect()
-                        logger.info("[%s] Successfully set user %s param %s = %d", app_user, selected_user, param, int(val))
-                        changes_made.append(f"**{label}**: set to {int(val)} AI credits/day")
-                    except Exception as e:
-                        logger.error("[%s] Failed to set user %s param %s = %d: %s", app_user, selected_user, param, int(val), e)
-                        st.error(f"Failed to set {label} for {selected_user}: {e}")
+                try:
+                    result = apply_limit_action(
+                        session,
+                        user_actions[label],
+                        PARAMS[label],
+                        label,
+                        user_inputs[label],
+                        alter_target,
+                        app_user,
+                    )
+                    if result:
+                        changes_made.append(result)
+                except Exception as e:
+                    st.error(f"Failed to update {label} for {selected_user}: {e}")
             if changes_made:
                 st.success(f"Limits updated for **{selected_user}**:\n\n" + "\n\n".join(changes_made))
-            else:
+            elif not any(a != "No change" for a in user_actions.values()):
                 st.info("No changes selected.")
 
     st.divider()
 
-    usage_periods = {"Last 7 days": 7, "Last 30 days": 30, "Last 60 days": 60, "Last 90 days": 90, "Last 365 days": 365}
     usage_period = st.selectbox(
         "Usage lookback",
-        options=list(usage_periods.keys()),
+        options=list(TIME_PERIODS.keys()),
         index=0,
         key="user_usage_period",
     )
-    usage_days = usage_periods[usage_period]
+    usage_days = TIME_PERIODS[usage_period]
 
     st.markdown(f"**Usage for `{selected_user}` ({usage_period.lower()}):**")
 
