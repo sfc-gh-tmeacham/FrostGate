@@ -231,7 +231,7 @@ if selected_user:
                     help="Only applies when 'Set limit' is selected above.",
                 )
 
-        user_submitted = st.form_submit_button("Apply User Changes")
+        user_submitted = st.form_submit_button("Apply User Changes", type="primary", icon=":material/check:")
         if user_submitted:
             app_user = st.session_state.get("current_user", "UNKNOWN")
             safe_user = selected_user.replace('"', '""')

@@ -158,7 +158,7 @@ with col_period:
 with col_refresh:
     st.write("")
     st.write("")
-    if st.button("Refresh", key="refresh_dashboard"):
+    if st.button("Refresh", key="refresh_dashboard", type="tertiary", icon=":material/refresh:"):
         fetch_all_dashboard_data.clear()
         st.rerun()
 

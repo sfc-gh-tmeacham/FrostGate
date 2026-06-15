@@ -20,6 +20,36 @@ FrostGate provides Snowflake administrators with a unified interface to:
 - **Bulk update** limits for multiple users at once with role and tag filters
 - **Track trends** including month-over-month growth and top consumer rankings
 
+## How It Works
+
+FrostGate does not enforce credit limits itself — it provides a UI layer on top of Snowflake's built-in credit control mechanism:
+
+1. **Snowflake's native enforcement** — Snowflake exposes account-level and user-level parameters (e.g. `CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER`) that cap how many AI credits a user can consume per day. When the limit is reached, Snowflake blocks further Cortex Code requests until the 24-hour window resets.
+
+2. **FrostGate reads usage data** — The app queries `SNOWFLAKE.ACCOUNT_USAGE` views to show how many credits each user has consumed across the three Cortex Code surfaces (Snowsight, CLI, Desktop).
+
+3. **FrostGate writes limit parameters** — When an admin changes a limit through the UI, FrostGate executes `ALTER ACCOUNT SET ...` or `ALTER USER SET ...` SQL commands to update the Snowflake parameters that control enforcement.
+
+4. **Two-tier model** — Account-level limits set the default cap for all users. Per-user overrides allow exceptions (higher or lower) for specific individuals. Unsetting a user override returns them to the account default.
+
+```
+┌─────────────────────────────────────────────────┐
+│  FrostGate (UI Layer)                           │
+│  ┌───────────────┐  ┌────────────────────────┐  │
+│  │ Read usage    │  │ Write limits           │  │
+│  │ (ACCOUNT_     │  │ (ALTER ACCOUNT/USER    │  │
+│  │  USAGE views) │  │  SET parameter = N)    │  │
+│  └───────┬───────┘  └───────────┬────────────┘  │
+└──────────┼──────────────────────┼───────────────┘
+           ▼                      ▼
+┌─────────────────────────────────────────────────┐
+│  Snowflake (Enforcement Layer)                  │
+│  • Tracks per-user daily credit consumption     │
+│  • Blocks requests when limit is exceeded       │
+│  • Resets counters every 24 hours               │
+└─────────────────────────────────────────────────┘
+```
+
 ## Pages
 
 | Page | Description |
@@ -30,6 +60,9 @@ FrostGate provides Snowflake administrators with a unified interface to:
 | Account Limits | View and modify account-wide daily AI credit caps |
 | User Limits | Per-user details, usage summary, and limit overrides |
 | Bulk User Update | Apply changes to multiple users with role/tag filtering |
+| Interface Access | Control which Snowflake interfaces (CoWork, Streamlit) users can access via ALLOWED_INTERFACES |
+| Logs | View application logs from the account's event table with severity and time filtering |
+| FAQs & Troubleshooting | Common questions, troubleshooting tips, and guidance for administrators |
 | SQL Reference | SQL examples for manual operations |
 
 ## Quick Start
@@ -154,6 +187,9 @@ frost-gate/
 │   ├── account_limits.py     # Account-level limit management
 │   ├── user_limits.py        # Per-user limit management
 │   ├── bulk_update.py        # Bulk user updates
+│   ├── interface_access.py   # Interface access (ALLOWED_INTERFACES)
+│   ├── logs.py               # Event table log viewer
+│   ├── faq.py                # FAQs and troubleshooting
 │   └── sql_reference.py      # SQL command reference
 setup.sql                     # Database and schema creation
 ```
@@ -173,6 +209,14 @@ setup.sql                     # Database and schema creation
 | `-1` | Unlimited (default) |
 | `0` | Blocked |
 | `> 0` | Daily AI credit cap |
+
+### What Users See When Limited
+
+When a user exceeds their daily credit cap, Cortex Code displays a message like this example:
+
+> Daily credit usage limit reached (50.01 of 50.00 credits used). Your limit resets every 24 hours — please try again later or contact your Snowflake administrator to adjust the limit.
+
+The exact values will vary based on the user's actual consumption and configured limit. This is the end-user experience that FrostGate helps administrators manage.
 
 ## Scope
 

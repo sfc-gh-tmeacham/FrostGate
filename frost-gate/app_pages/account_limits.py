@@ -59,7 +59,7 @@ with st.form("account_form"):
                 help="Only applies when 'Set limit' is selected above.",
             )
 
-    submitted = st.form_submit_button("Apply Account Changes")
+    submitted = st.form_submit_button("Apply Account Changes", type="primary", icon=":material/check:")
     if submitted:
         app_user = st.session_state.get("current_user", "UNKNOWN")
         changes_made = []

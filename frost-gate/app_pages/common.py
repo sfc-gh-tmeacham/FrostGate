@@ -209,6 +209,16 @@ def get_users_df(_session: Session):
     """
     import pandas as pd
 
+    # Get the account's local timezone
+    tz_rows = _session.sql("SHOW PARAMETERS LIKE 'TIMEZONE' IN ACCOUNT").collect()
+    account_tz = "UTC"
+    for row in tz_rows:
+        row_dict = row.as_dict()
+        val = row_dict.get("value") or row_dict.get("VALUE", "")
+        if val:
+            account_tz = val
+            break
+
     df = pd.DataFrame([r.as_dict() for r in _session.sql("SHOW USERS").collect()])
     col_map = {c.lower(): c for c in df.columns}
     result = pd.DataFrame()
@@ -216,6 +226,12 @@ def get_users_df(_session: Session):
     result["Display Name"] = df[col_map.get("display_name", "display_name")].fillna("—")
     result["Email"] = df[col_map.get("email", "email")].fillna("—")
     result["Default Role"] = df[col_map.get("default_role", "default_role")].fillna("—")
-    result["Last Login"] = df[col_map.get("last_success_login", "last_success_login")].fillna("Never")
+
+    # Format Last Login to minute precision in the account's timezone
+    last_login_col = df[col_map.get("last_success_login", "last_success_login")]
+    last_login_ts = pd.to_datetime(last_login_col, errors="coerce", utc=True)
+    last_login_local = last_login_ts.dt.tz_convert(account_tz)
+    result["Last Login"] = last_login_local.dt.strftime("%Y-%m-%d %H:%M").fillna("Never")
+
     result["Disabled"] = df[col_map.get("disabled", "disabled")].fillna("false")
     return result.sort_values("User").reset_index(drop=True)

@@ -141,7 +141,7 @@ if bulk_users:
                     help="Only applies when 'Set limit' is selected above.",
                 )
 
-        bulk_submitted = st.form_submit_button("Apply to All Selected Users")
+        bulk_submitted = st.form_submit_button("Apply to All Selected Users", type="primary", icon=":material/check_circle:")
         if bulk_submitted:
             app_user = st.session_state.get("current_user", "UNKNOWN")
             logger.info("[%s] Bulk update submitted for %d users", app_user, len(bulk_users))
@@ -188,7 +188,7 @@ st.info(
     icon=":material/info:",
 )
 
-if st.button("Scan Users", key="scan_btn"):
+if st.button("Scan Users", key="scan_btn", type="secondary", icon=":material/search:"):
     logger.info("Bulk scan initiated")
     with st.spinner("Scanning all users for overrides... This may take a moment."):
         user_overrides = {}

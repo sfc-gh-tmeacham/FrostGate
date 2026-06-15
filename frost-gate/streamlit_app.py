@@ -17,17 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("frostgate")
 
-st.set_page_config(page_title="FrostGate", page_icon="\u2744\ufe0f", layout="wide", initial_sidebar_state="collapsed")
-
-# Hide the default sidebar since we use top-positioned navigation tabs instead
-st.html("""
-<style>
-    [data-testid="stSidebar"] { display: none; }
-    [data-testid="stSidebarCollapsedControl"] { display: none; }
-</style>
-""")
-
-st.title(":material/ac_unit: FrostGate")
+st.set_page_config(page_title="FrostGate", page_icon="\u2744\ufe0f", layout="wide", initial_sidebar_state="expanded")
 
 # Establish Snowflake connection using the built-in Streamlit connector.
 # TTL is configurable via env var to control session refresh frequency.
@@ -56,15 +46,20 @@ except Exception:
     )
     st.stop()
 
-# Define the multi-page navigation structure with top-positioned tabs
-page = st.navigation([
-    st.Page("app_pages/home.py", title="Home", icon=":material/home:", default=True),
-    st.Page("app_pages/dashboard.py", title="Usage Dashboard", icon=":material/bar_chart:"),
-    st.Page("app_pages/top_users.py", title="Top Users", icon=":material/leaderboard:"),
-    st.Page("app_pages/account_limits.py", title="Account Limits", icon=":material/tune:"),
-    st.Page("app_pages/user_limits.py", title="User Limits", icon=":material/person:"),
-    st.Page("app_pages/bulk_update.py", title="Bulk User Update", icon=":material/group:"),
-    st.Page("app_pages/sql_reference.py", title="SQL Reference", icon=":material/code:"),
-], position="top")
+# Define the multi-page navigation structure in the sidebar
+page = st.navigation({
+    ":material/ac_unit: FrostGate": [
+        st.Page("app_pages/home.py", title="Home", icon=":material/home:", default=True),
+        st.Page("app_pages/dashboard.py", title="Usage Dashboard", icon=":material/bar_chart:"),
+        st.Page("app_pages/top_users.py", title="Top Users", icon=":material/leaderboard:"),
+        st.Page("app_pages/account_limits.py", title="Account Limits", icon=":material/tune:"),
+        st.Page("app_pages/user_limits.py", title="User Limits", icon=":material/person:"),
+        st.Page("app_pages/bulk_update.py", title="Bulk User Update", icon=":material/group:"),
+        st.Page("app_pages/interface_access.py", title="Interface Access", icon=":material/devices:"),
+        st.Page("app_pages/logs.py", title="Logs", icon=":material/terminal:"),
+        st.Page("app_pages/faq.py", title="FAQs", icon=":material/help:"),
+        st.Page("app_pages/sql_reference.py", title="SQL Reference", icon=":material/code:"),
+    ],
+}, position="sidebar")
 
 page.run()

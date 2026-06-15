@@ -76,7 +76,7 @@ st.markdown(
     "Monitor consumption, set daily caps, and identify power users across "
     "all Cortex Code surfaces — from a single pane of glass."
 )
-st.caption("Use the navigation tabs at the top of the page to switch between sections.")
+st.caption("Use the sidebar navigation to switch between sections.")
 
 # --- What is FrostGate ---
 st.markdown("##### What is FrostGate?")
@@ -194,6 +194,22 @@ with row2[1]:
         st.caption("Apply limit changes to multiple users at once. Scan for existing overrides.")
 
 with row2[2]:
+    with st.container(border=True):
+        st.markdown(":material/devices: **Interface Access**")
+        st.caption("Control which Snowflake interfaces (CoWork, Streamlit apps) each user can access via ALLOWED_INTERFACES.")
+
+row3 = st.columns(3)
+with row3[0]:
+    with st.container(border=True):
+        st.markdown(":material/terminal: **Logs**")
+        st.caption("View application logs from the account's event table with severity and time filtering.")
+
+with row3[1]:
+    with st.container(border=True):
+        st.markdown(":material/help: **FAQs & Troubleshooting**")
+        st.caption("Common questions, troubleshooting tips, and guidance for administrators.")
+
+with row3[2]:
     with st.container(border=True):
         st.markdown(":material/code: **SQL Reference**")
         st.caption("SQL examples for manually running the commands FrostGate automates.")

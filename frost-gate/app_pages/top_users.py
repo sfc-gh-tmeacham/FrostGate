@@ -265,7 +265,7 @@ with col_period:
 with col_refresh:
     st.write("")
     st.write("")
-    if st.button("Refresh", key="refresh_top_users"):
+    if st.button("Refresh", key="refresh_top_users", type="tertiary", icon=":material/refresh:"):
         fetch_top_users.clear()
         st.rerun()
 

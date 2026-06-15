@@ -24,4 +24,5 @@ entities:
       - app_pages/account_limits.py
       - app_pages/user_limits.py
       - app_pages/bulk_update.py
+      - app_pages/interface_access.py
       - app_pages/sql_reference.py

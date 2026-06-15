@@ -209,4 +209,69 @@ SHOW PARAMETERS LIKE 'CORTEX_CODE_%_DAILY_EST_CREDIT_LIMIT_PER_USER' FOR USER "U
 """, language="sql")
 
 st.divider()
+
+# --- Interface Access ---
+# ALLOWED_INTERFACES controls which interfaces a user can access
+st.markdown("##### Interface Access (ALLOWED_INTERFACES)")
+st.caption("Control which interfaces a user can access. Valid values: ALL, SNOWFLAKE_INTELLIGENCE, STREAMLIT.")
+
+st.code("""
+-- View a user's current ALLOWED_INTERFACES setting
+DESCRIBE USER "USERNAME";
+-- Look for the ALLOWED_INTERFACES property in the output
+
+-- Reset to all interfaces (default) by unsetting the parameter
+ALTER USER "USERNAME" UNSET ALLOWED_INTERFACES;
+
+-- Restrict to Snowflake CoWork only
+ALTER USER "USERNAME" SET ALLOWED_INTERFACES = ('SNOWFLAKE_INTELLIGENCE');
+
+-- Restrict to Streamlit apps only
+ALTER USER "USERNAME" SET ALLOWED_INTERFACES = ('STREAMLIT');
+
+-- Allow both CoWork and Streamlit (but not Snowsight)
+ALTER USER "USERNAME" SET ALLOWED_INTERFACES = ('SNOWFLAKE_INTELLIGENCE', 'STREAMLIT');
+""", language="sql")
+
+st.divider()
+
+# --- Logs ---
+st.markdown("##### Event Table Logs")
+st.caption("Query FrostGate application logs and audit trail from the account's event table.")
+
+st.code("""
+-- Find the account's configured event table
+SHOW PARAMETERS LIKE 'EVENT_TABLE' IN ACCOUNT;
+
+-- View all FrostGate logs (last 24 hours)
+SELECT
+    TIMESTAMP,
+    UPPER(TRY_PARSE_JSON(VALUE):level::VARCHAR) AS SEVERITY,
+    RESOURCE_ATTRIBUTES['snow.executable.name']::VARCHAR AS SOURCE,
+    TRY_PARSE_JSON(VALUE):message::VARCHAR AS MESSAGE
+FROM <event_table>
+WHERE TIMESTAMP >= TIMESTAMPADD(HOUR, -24, CURRENT_TIMESTAMP())
+  AND RECORD_TYPE = 'LOG'
+  AND RESOURCE_ATTRIBUTES['snow.executable.type']::VARCHAR = 'STREAMLIT'
+  AND TRY_PARSE_JSON(VALUE):message::VARCHAR LIKE '%frostgate:%'
+ORDER BY TIMESTAMP DESC
+LIMIT 500;
+
+-- View only audit entries (parameter/interface changes)
+SELECT
+    TIMESTAMP,
+    UPPER(TRY_PARSE_JSON(VALUE):level::VARCHAR) AS SEVERITY,
+    TRY_PARSE_JSON(VALUE):message::VARCHAR AS MESSAGE
+FROM <event_table>
+WHERE TIMESTAMP >= TIMESTAMPADD(DAY, -7, CURRENT_TIMESTAMP())
+  AND RECORD_TYPE = 'LOG'
+  AND RESOURCE_ATTRIBUTES['snow.executable.type']::VARCHAR = 'STREAMLIT'
+  AND REGEXP_LIKE(
+      TRY_PARSE_JSON(VALUE):message::VARCHAR,
+      '.*frostgate:.*\\\\[.+\\\\] (Set|Unsetting|Setting|Bulk set|Reset).*'
+  )
+ORDER BY TIMESTAMP DESC;
+""", language="sql")
+
+st.divider()
 st.caption("All parameters use -1 as the default (unlimited). A value of 0 blocks usage entirely.")
