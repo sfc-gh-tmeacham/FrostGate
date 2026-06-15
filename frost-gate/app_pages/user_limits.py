@@ -8,59 +8,10 @@ users, and scanning all users for existing overrides.
 import logging
 import streamlit as st
 
+from app_pages.common import PARAMS, USAGE_VIEWS, get_param_value, display_limit_value, get_user_list
+
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
-
-# Snowflake parameter names for per-user daily AI credit limits per surface.
-# These override account-level defaults when set on a specific user.
-PARAMS = {
-    "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Snowsight": "CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER",
-}
-
-# ACCOUNT_USAGE views for querying per-user credit consumption history
-USAGE_VIEWS = {
-    "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
-    "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
-    "Snowsight": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY",
-}
-
-
-def _get_param_value(sql):
-    """Execute a SHOW PARAMETERS query and return the first row as a dict.
-
-    Args:
-        sql: The SHOW PARAMETERS SQL statement to execute.
-
-    Returns:
-        A dict with lowercase keys from the result row, or None if empty.
-    """
-    rows = session.sql(sql).collect()
-    if not rows:
-        return None
-    row = rows[0].as_dict()
-    row_lower = {k.lower(): v for k, v in row.items()}
-    return row_lower
-
-
-@st.cache_data(ttl=86400)
-def get_users(_session):
-    """Fetch the list of all users in the account.
-
-    Args:
-        _session: Snowpark session (underscore prefix for st.cache_data).
-
-    Returns:
-        Sorted list of user name strings.
-    """
-    logger.info("Fetching user list")
-    df = _session.sql("SHOW USERS").to_pandas()
-    col_map = {c.lower(): c for c in df.columns}
-    name_col = col_map.get("name", df.columns[0])
-    users = sorted(df[name_col].tolist())
-    logger.info("Found %d users", len(users))
-    return users
 
 
 @st.cache_data(ttl=86400)
@@ -151,25 +102,7 @@ def get_user_params(username):
     return results
 
 
-def display_limit_value(value):
-    """Format a limit value for display.
 
-    Args:
-        value: The raw parameter value as a string or number.
-
-    Returns:
-        Human-readable string (e.g. "Unlimited (default)", "20 AI credits/day").
-    """
-    try:
-        v = float(value)
-        if v == -1:
-            return "Unlimited (default)"
-        elif v == 0:
-            return "Blocked (0)"
-        else:
-            return f"{v:g} AI credits/day"
-    except (ValueError, TypeError):
-        return str(value)
 
 
 @st.cache_data(ttl=1800)
@@ -257,7 +190,7 @@ st.info(
 )
 
 # Load the full user list (cached 24h) and provide a refresh button
-users = get_users(session)
+users = get_user_list(session)
 
 col_user, col_refresh = st.columns([4, 1])
 with col_user:
@@ -266,7 +199,7 @@ with col_refresh:
     st.write("")
     st.write("")
     if st.button("Refresh users", key="refresh_users", help="Clear the user list cache and reload from Snowflake."):
-        get_users.clear()
+        get_user_list.clear()
         st.rerun()
 
 if selected_user:
@@ -302,7 +235,7 @@ if selected_user:
     cols = st.columns(3)
     for i, (label, info) in enumerate(user_params.items()):
         with cols[i]:
-            st.metric(label=f"{label}", value=display_limit_value(info["value"]), border=True, help=f"Current {label} daily AI credit limit for this user.")
+            st.metric(label=f"{label}", value=display_limit_value(info["value"], verbose=True), border=True, help=f"Current {label} daily AI credit limit for this user.")
             # Indicate whether this is a per-user override or inherited from account
             if info["level"] == "USER":
                 st.caption("User-level override")

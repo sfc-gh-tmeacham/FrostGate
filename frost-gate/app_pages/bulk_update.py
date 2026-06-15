@@ -8,15 +8,10 @@ import logging
 import streamlit as st
 import pandas as pd
 
+from app_pages.common import PARAMS, display_limit_value
+
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
-
-# Snowflake parameter names for per-user daily AI credit limits per surface
-PARAMS = {
-    "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Snowsight": "CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER",
-}
 
 
 def get_users(sess):
@@ -58,20 +53,6 @@ def get_user_params(user):
             logger.error("Failed to fetch param %s for %s: %s", label, user, e)
             results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
     return results
-
-
-def display_limit_value(value):
-    """Format a limit value for display."""
-    try:
-        v = float(value)
-        if v == -1:
-            return "Unlimited"
-        elif v == 0:
-            return "Blocked"
-        else:
-            return f"{v:g}"
-    except (ValueError, TypeError):
-        return str(value)
 
 
 # --- Page layout ---

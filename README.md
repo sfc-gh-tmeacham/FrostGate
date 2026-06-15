@@ -135,6 +135,7 @@ Use this method if you don't want to connect a Git repository to Snowflake.
 frost-gate/
 ├── streamlit_app.py          # Main entry point and navigation
 ├── app_pages/
+│   ├── common.py             # Shared constants and utility functions
 │   ├── home.py               # Landing page with system health
 │   ├── dashboard.py          # Usage dashboard with sparklines
 │   ├── top_users.py          # Top users and Pareto analysis

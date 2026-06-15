@@ -41,7 +41,7 @@ CREATE WAREHOUSE IF NOT EXISTS IDENTIFIER($FROSTGATE_WAREHOUSE)
     MAX_CLUSTER_COUNT = 3
     SCALING_POLICY = 'STANDARD'
     ENABLE_QUERY_ACCELERATION = TRUE
-    QUERY_ACCELERATION_MAX_SCALE_FACTOR = 2
+    QUERY_ACCELERATION_MAX_SCALE_FACTOR = 8
     COMMENT = 'Gen2 multi-cluster query warehouse for FrostGate Streamlit app.';
 
 /* ============================================================

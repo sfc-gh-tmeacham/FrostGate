@@ -7,23 +7,10 @@ and guides new users on how to use each section.
 import logging
 import streamlit as st
 
+from app_pages.common import PARAMS, USAGE_VIEWS
+
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
-
-# Snowflake account parameters that control daily AI credit caps per surface.
-# These are the ALTER ACCOUNT / ALTER USER parameter names.
-PARAMS = {
-    "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Snowsight": "CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER",
-}
-
-# ACCOUNT_USAGE views that track credit consumption for each Cortex Code surface
-USAGE_VIEWS = {
-    "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
-    "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
-    "Snowsight": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY",
-}
 
 
 @st.cache_data(ttl=3600)

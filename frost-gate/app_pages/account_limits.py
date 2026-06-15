@@ -8,33 +8,10 @@ users unless overridden per-user.
 import logging
 import streamlit as st
 
+from app_pages.common import PARAMS, get_param_value, display_limit_value
+
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
-
-# Snowflake parameter names for daily AI credit limits per surface.
-# These are the parameters set via ALTER ACCOUNT SET / UNSET.
-PARAMS = {
-    "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
-    "Snowsight": "CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER",
-}
-
-
-def _get_param_value(sql):
-    """Execute a SHOW PARAMETERS query and return the first row as a dict.
-
-    Args:
-        sql: The SHOW PARAMETERS SQL statement to execute.
-
-    Returns:
-        A dict with lowercase keys from the result row, or None if empty.
-    """
-    rows = session.sql(sql).collect()
-    if not rows:
-        return None
-    row = rows[0].as_dict()
-    row_lower = {k.lower(): v for k, v in row.items()}
-    return row_lower
 
 
 def get_account_params():
@@ -76,26 +53,6 @@ def get_account_params():
     return results
 
 
-def display_limit_value(value):
-    """Format a limit value for display.
-
-    Args:
-        value: The raw parameter value as a string or number.
-
-    Returns:
-        Human-readable string (e.g. "Unlimited (default)", "20 AI credits/day").
-    """
-    try:
-        v = float(value)
-        if v == -1:
-            return "Unlimited (default)"
-        elif v == 0:
-            return "Blocked (0)"
-        else:
-            return f"{v:g} AI credits/day"
-    except (ValueError, TypeError):
-        return str(value)
-
 
 # --- Page layout ---
 
@@ -113,7 +70,7 @@ account_params = get_account_params()
 cols = st.columns(3)
 for i, (label, info) in enumerate(account_params.items()):
     with cols[i]:
-        st.metric(label=f"{label}", value=display_limit_value(info["value"]), border=True, help=f"Current {label} daily AI credit limit for all users.")
+        st.metric(label=f"{label}", value=display_limit_value(info["value"], verbose=True), border=True, help=f"Current {label} daily AI credit limit for all users.")
         if info["level"] == "ACCOUNT":
             st.caption("Set at account level")
         else:

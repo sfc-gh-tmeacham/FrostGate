@@ -9,25 +9,10 @@ import traceback
 import streamlit as st
 import pandas as pd
 
+from app_pages.common import USAGE_VIEWS, TIME_PERIODS
+
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
-
-# ACCOUNT_USAGE views for each Cortex Code surface
-USAGE_VIEWS = {
-    "Snowsight": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY",
-    "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
-    "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
-}
-
-# Configurable lookback windows for the time period selector
-TIME_PERIODS = {
-    "Last 7 days": 7,
-    "Last 14 days": 14,
-    "Last 30 days": 30,
-    "Last 60 days": 60,
-    "Last 90 days": 90,
-    "Last 365 days": 365,
-}
 
 
 def _build_top_users_sql(view_name, days):
