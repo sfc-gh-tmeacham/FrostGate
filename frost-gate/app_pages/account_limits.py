@@ -11,6 +11,8 @@ import streamlit as st
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
+# Snowflake parameter names for daily AI credit limits per surface.
+# These are the parameters set via ALTER ACCOUNT SET / UNSET.
 PARAMS = {
     "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
     "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
@@ -147,6 +149,7 @@ with st.form("account_form"):
         app_user = st.session_state.get("current_user", "UNKNOWN")
         logger.info("[%s] Account form submitted", app_user)
         changes_made = []
+        # Process each surface's selected action and execute the corresponding SQL
         for label in PARAMS:
             action = account_actions[label]
             param = PARAMS[label]

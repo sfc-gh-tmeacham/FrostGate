@@ -11,12 +11,15 @@ import streamlit as st
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
+# Snowflake parameter names for per-user daily AI credit limits per surface.
+# These override account-level defaults when set on a specific user.
 PARAMS = {
     "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
     "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
     "Snowsight": "CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER",
 }
 
+# ACCOUNT_USAGE views for querying per-user credit consumption history
 USAGE_VIEWS = {
     "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
     "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
@@ -253,6 +256,7 @@ st.info(
     icon=":material/info:",
 )
 
+# Load the full user list (cached 24h) and provide a refresh button
 users = get_users(session)
 
 col_user, col_refresh = st.columns([4, 1])
@@ -266,6 +270,7 @@ with col_refresh:
         st.rerun()
 
 if selected_user:
+    # Show user profile details (display name, email, role, etc.)
     user_details = get_user_details(session, selected_user)
     if user_details:
         detail_cols = st.columns(6)
@@ -290,6 +295,7 @@ if selected_user:
         if user_details["disabled"] == "true":
             st.warning("This user account is disabled.", icon=":material/block:")
 
+    # Fetch and display current limit settings for this user (async per surface)
     user_params = get_user_params(selected_user)
 
     st.markdown(f"**Current limits for `{selected_user}`:**")
@@ -297,6 +303,7 @@ if selected_user:
     for i, (label, info) in enumerate(user_params.items()):
         with cols[i]:
             st.metric(label=f"{label}", value=display_limit_value(info["value"]), border=True, help=f"Current {label} daily AI credit limit for this user.")
+            # Indicate whether this is a per-user override or inherited from account
             if info["level"] == "USER":
                 st.caption("User-level override")
             else:
@@ -333,6 +340,7 @@ if selected_user:
             logger.info("[%s] User form submitted for user: %s", app_user, selected_user)
             changes_made = []
             safe_user = selected_user.replace('"', '""')
+            # Execute the selected action for each surface via ALTER USER SQL
             for label in PARAMS:
                 action = user_actions[label]
                 param = PARAMS[label]
@@ -392,9 +400,10 @@ if selected_user:
 
     st.markdown(f"**Usage for `{selected_user}` ({usage_period.lower()}):**")
 
+    # Fetch usage totals and comparison stats (user vs account average)
     usage_results, compare_results = fetch_user_usage(session, selected_user, usage_days)
 
-    # Display usage totals
+    # Display total credits and request count per surface
     usage_cols = st.columns(3)
     for i, label in enumerate(USAGE_VIEWS):
         with usage_cols[i]:

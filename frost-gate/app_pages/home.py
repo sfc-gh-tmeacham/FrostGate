@@ -10,12 +10,15 @@ import streamlit as st
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
+# Snowflake account parameters that control daily AI credit caps per surface.
+# These are the ALTER ACCOUNT / ALTER USER parameter names.
 PARAMS = {
     "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
     "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
     "Snowsight": "CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER",
 }
 
+# ACCOUNT_USAGE views that track credit consumption for each Cortex Code surface
 USAGE_VIEWS = {
     "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
     "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
@@ -26,12 +29,12 @@ USAGE_VIEWS = {
 @st.cache_data(ttl=3600)
 def get_system_health(_session):
     """Fetch account limit status and 7-day usage summary for the homepage."""
-    # Get account limits
+    # Submit async queries for account-level limit parameters (one per surface)
     limit_jobs = {}
     for label, param in PARAMS.items():
         limit_jobs[label] = _session.sql(f"SHOW PARAMETERS LIKE '{param}' IN ACCOUNT").collect_nowait()
 
-    # Get 7-day usage totals per surface
+    # Submit async queries for 7-day usage totals per surface
     usage_jobs = {}
     for label, view in USAGE_VIEWS.items():
         usage_jobs[label] = _session.sql(f"""
@@ -43,7 +46,7 @@ def get_system_health(_session):
             WHERE USAGE_TIME >= DATEADD('day', -7, CURRENT_TIMESTAMP())
         """).collect_nowait()
 
-    # Collect limits
+    # Collect limit results; default to -1 (unlimited) on failure
     limits = {}
     for label, job in limit_jobs.items():
         try:
@@ -58,7 +61,7 @@ def get_system_health(_session):
         except Exception:
             limits[label] = {"value": "-1", "level": "DEFAULT"}
 
-    # Collect usage
+    # Collect usage results; default to zeros on failure
     usage = {}
     for label, job in usage_jobs.items():
         try:
@@ -77,6 +80,8 @@ def get_system_health(_session):
 
     return limits, usage
 
+# --- Page Layout ---
+
 st.markdown("")
 
 st.subheader("Cortex Code AI Credit Usage Limit Manager", anchor=False)
@@ -88,7 +93,7 @@ st.caption("Use the navigation tabs at the top of the page to switch between sec
 
 st.markdown("")
 
-# --- Quick stats ---
+# --- Quick stats: static overview metrics for at-a-glance context ---
 stat_cols = st.columns(3)
 with stat_cols[0]:
     st.metric("Surfaces Monitored", "3", border=True, help="Snowsight, CLI, and Desktop")
@@ -105,7 +110,8 @@ st.caption("Live account limit status and 7-day usage summary. Cached for 1 hour
 
 limits, usage = get_system_health(session)
 
-# Account limit status
+# Display current account-level limit for each surface as metric cards.
+# Values: -1 = unlimited, 0 = blocked, positive = daily credit cap.
 st.markdown("**Account Limits**")
 limit_cols = st.columns(3)
 for i, (label, info) in enumerate(limits.items()):
@@ -133,7 +139,7 @@ for i, (label, info) in enumerate(limits.items()):
             help=f"Current account-level daily AI credit cap for {label}. Level: {info['level']}",
         )
 
-# 7-day usage summary
+# Display 7-day rolling usage summary per surface
 st.markdown("**Last 7 Days Usage**")
 usage_cols = st.columns(3)
 for i, (label, data) in enumerate(usage.items()):

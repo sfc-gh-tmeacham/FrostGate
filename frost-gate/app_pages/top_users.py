@@ -12,12 +12,14 @@ import pandas as pd
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
+# ACCOUNT_USAGE views for each Cortex Code surface
 USAGE_VIEWS = {
     "Snowsight": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY",
     "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
     "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
 }
 
+# Configurable lookback windows for the time period selector
 TIME_PERIODS = {
     "Last 7 days": 7,
     "Last 14 days": 14,
@@ -216,6 +218,8 @@ def fetch_top_users(_session, days):
     """
     logger.info("Fetching top users for all surfaces, days=%d", days)
 
+    # Submit 4 async queries per surface (top users, trends, MoM growth, Pareto)
+    # for a total of 12 parallel queries
     async_jobs = {}
     for surface, view in USAGE_VIEWS.items():
         sql = _build_top_users_sql(view, days)
@@ -234,6 +238,7 @@ def fetch_top_users(_session, days):
         logger.info("Submitting async pareto for %s", surface)
         async_jobs[f"{surface}_pareto"] = _session.sql(pareto_sql).collect_nowait()
 
+    # Collect all results; store exceptions for graceful per-section error handling
     results = {}
     for key, job in async_jobs.items():
         logger.info("Waiting for result: %s (query_id=%s)", key, job.query_id)
@@ -284,6 +289,8 @@ days = TIME_PERIODS[period]
 with st.spinner("Loading top users..."):
     results = fetch_top_users(session, days)
 
+# Render sections for each surface: Pareto analysis, top 20 table, bar chart,
+# daily trend line chart, and month-over-month growth table
 for surface in USAGE_VIEWS:
     st.subheader(f"{surface}")
 
@@ -299,6 +306,7 @@ for surface in USAGE_VIEWS:
         total_users_col = p_col_map.get("total_users", "TOTAL_USERS")
 
         pareto_df[cum_col] = pd.to_numeric(pareto_df[cum_col], errors="coerce")
+        # "Power users" = users who collectively account for 80% of total credits
         power_users_df = pareto_df[pareto_df[cum_col] <= 80]
 
         # If no users hit 80% threshold, take at least the top user
@@ -375,7 +383,7 @@ for surface in USAGE_VIEWS:
         chart_df = display_df[["Name", "Total AI Credits"]].sort_values("Total AI Credits")
         st.bar_chart(chart_df, x="Name", y="Total AI Credits", horizontal=True)
 
-    # Daily credit trends for top users over time
+    # Daily credit trends for top users over time (line chart)
     trends_result = results.get(f"{surface}_trends")
     if isinstance(trends_result, Exception):
         st.error(f"Failed to load trends for {surface}: {trends_result}")
@@ -388,14 +396,15 @@ for surface in USAGE_VIEWS:
         name_col = t_col_map.get("display_name", "DISPLAY_NAME")
         credits_col = t_col_map.get("daily_credits", "DAILY_CREDITS")
 
-        # Pivot so each user is a column
+        # Pivot from long-form (one row per user per day) to wide-form
+        # (one column per user) for the multi-series line chart
         trends_df[date_col] = pd.to_datetime(trends_df[date_col])
         trends_df[credits_col] = pd.to_numeric(trends_df[credits_col], errors="coerce")
         pivot_df = trends_df.pivot_table(
             index=date_col, columns=name_col, values=credits_col, fill_value=0
         )
 
-        # Fill timeline gaps
+        # Fill timeline gaps so every day appears on the x-axis
         if not pivot_df.empty:
             full_range = pd.date_range(
                 start=pivot_df.index.min(),

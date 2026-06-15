@@ -11,6 +11,7 @@ import pandas as pd
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
+# Snowflake parameter names for per-user daily AI credit limits per surface
 PARAMS = {
     "CLI": "CORTEX_CODE_CLI_DAILY_EST_CREDIT_LIMIT_PER_USER",
     "Desktop": "CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER",
@@ -84,7 +85,7 @@ st.info(
 
 users_df = get_users(session)
 
-# Role filter
+# --- Filters: narrow down the user list by role grants or tag assignments ---
 roles_df = session.sql("SHOW ROLES").to_pandas()
 roles_col_map = {c.upper(): c for c in roles_df.columns}
 roles_col = roles_col_map.get("NAME", roles_df.columns[1] if len(roles_df.columns) > 1 else roles_df.columns[0])
@@ -118,10 +119,11 @@ with filter_cols[1]:
         help="Only show users who have one of these tags assigned. Leave empty to show all users.",
     )
 
-# Apply filters
+# Apply role and tag filters to narrow the displayed user list
 display_df = users_df
 
 if role_filter:
+    # Query GRANTS_TO_USERS to find users with the selected role(s)
     placeholders = ", ".join(f"'{r}'" for r in role_filter)
     role_users_df = session.sql(f"""
         SELECT DISTINCT GRANTEE_NAME AS USER_NAME
@@ -200,6 +202,7 @@ if bulk_users:
             app_user = st.session_state.get("current_user", "UNKNOWN")
             logger.info("[%s] Bulk update submitted for %d users", app_user, len(bulk_users))
             changes_made = []
+            # Iterate over each selected user and apply the chosen action per surface
             for user in bulk_users:
                 safe_user = user.replace('"', '""')
                 user_changes = []
@@ -251,6 +254,8 @@ if bulk_users:
                 st.info("No changes selected.")
 
 st.divider()
+
+# --- Override Scanner: find all users with per-user limit overrides ---
 st.subheader("All Users with Overrides")
 st.caption("Scan all users to find those with per-user limit overrides.")
 st.info(

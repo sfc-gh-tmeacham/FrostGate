@@ -1,7 +1,8 @@
 """SQL Reference page.
 
 Provides SQL examples for manually performing the operations
-that FrostGate automates through its UI.
+that FrostGate automates through its UI. Each section shows the
+equivalent SQL commands an admin would run in a worksheet.
 """
 
 import streamlit as st
@@ -16,6 +17,7 @@ st.info(
 st.divider()
 
 # --- View Current Account Limits ---
+# Uses SHOW PARAMETERS to inspect the current value and level (ACCOUNT vs DEFAULT)
 st.markdown("##### View Current Account Limits")
 st.caption("Check what limits are currently set at the account level for each surface.")
 
@@ -33,6 +35,7 @@ SHOW PARAMETERS LIKE 'CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER' IN AC
 st.divider()
 
 # --- Set Account Limits ---
+# Uses ALTER ACCOUNT SET to apply a daily cap for all users on a given surface
 st.markdown("##### Set Account Limits")
 st.caption("Set a daily AI credit cap for all users on a surface. Replace 25 with your desired limit.")
 
@@ -50,6 +53,7 @@ ALTER ACCOUNT SET CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER = 25;
 st.divider()
 
 # --- Block Usage ---
+# Setting a limit to 0 effectively disables the surface for that user/account
 st.markdown("##### Block Usage (Set to 0)")
 st.caption("Setting a limit to 0 blocks all usage on that surface.")
 
@@ -64,6 +68,7 @@ ALTER USER "USERNAME" SET CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER 
 st.divider()
 
 # --- Unset (Unlimited) ---
+# UNSET removes the explicit setting; -1 explicitly means "no cap"
 st.markdown("##### Unset Limits (Unlimited)")
 st.caption("Unsetting a parameter returns it to the default (-1 = unlimited). You can also explicitly set -1.")
 
@@ -84,6 +89,7 @@ ALTER USER "USERNAME" SET CORTEX_CODE_SNOWSIGHT_DAILY_EST_CREDIT_LIMIT_PER_USER 
 st.divider()
 
 # --- Per-User Limits ---
+# Per-user overrides take precedence over account defaults
 st.markdown("##### Per-User Limits")
 st.caption("Set or view limits for a specific user. These override account defaults.")
 
@@ -104,6 +110,7 @@ ALTER USER "USERNAME" SET CORTEX_CODE_DESKTOP_DAILY_EST_CREDIT_LIMIT_PER_USER = 
 st.divider()
 
 # --- Query Usage History ---
+# ACCOUNT_USAGE views provide historical credit consumption data (up to 45 min lag)
 st.markdown("##### Query Usage History")
 st.caption("Query the ACCOUNT_USAGE views to see AI credit consumption. Data may lag up to 45 minutes.")
 
@@ -149,6 +156,7 @@ ORDER BY DAILY_CREDITS DESC;
 st.divider()
 
 # --- Total Usage Across All Surfaces ---
+# UNION ALL combines all three surface views for a holistic cross-surface report
 st.markdown("##### Total Usage Across All Surfaces")
 st.caption("Combine all three surfaces for a holistic view.")
 
@@ -188,6 +196,7 @@ ORDER BY TOTAL_CREDITS DESC;
 st.divider()
 
 # --- Identify Users with Overrides ---
+# Check each user's params — rows with LEVEL = 'USER' indicate overrides
 st.markdown("##### Identify Users with Overrides")
 st.caption("Find all users who have per-user limit overrides set.")
 

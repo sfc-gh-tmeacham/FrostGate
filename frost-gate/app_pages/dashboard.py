@@ -13,12 +13,15 @@ import pandas as pd
 logger = logging.getLogger("frostgate")
 session = st.session_state["session"]
 
+# ACCOUNT_USAGE views for each Cortex Code surface — these are the data sources
+# for all dashboard metrics and charts
 USAGE_VIEWS = {
     "Snowsight": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY",
     "CLI": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_CLI_USAGE_HISTORY",
     "Desktop": "SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_DESKTOP_USAGE_HISTORY",
 }
 
+# Selectable lookback windows for the dashboard time period filter
 TIME_PERIODS = {
     "Last 7 days": 7,
     "Last 14 days": 14,
@@ -115,7 +118,8 @@ def fetch_all_dashboard_data(_session, days):
     """
     logger.info("Launching async queries for all surfaces, days=%d", days)
 
-    # Submit all queries asynchronously
+    # Fire all queries in parallel using collect_nowait() — two per surface
+    # (summary for headline metrics, stats for daily time-series chart)
     async_jobs = {}
     for surface, view in USAGE_VIEWS.items():
         summary_sql = _build_summary_sql(view, days)
@@ -127,7 +131,8 @@ def fetch_all_dashboard_data(_session, days):
         logger.info("Submitting async stats for %s", surface)
         async_jobs[f"{surface}_stats"] = _session.sql(stats_sql).collect_nowait()
 
-    # Collect results
+    # Wait for all async results; store exceptions rather than raising so the
+    # UI can show partial results if only one surface fails
     results = {}
     for key, job in async_jobs.items():
         logger.info("Waiting for async result: %s (query_id=%s)", key, job.query_id)
@@ -176,14 +181,15 @@ with col_refresh:
 days = TIME_PERIODS[period]
 logger.info("Dashboard rendering with period=%s, days=%d", period, days)
 
-# Fetch all data in parallel
+# Fetch all data in parallel (cached for 30 min via @st.cache_data)
 with st.spinner("Loading usage data..."):
     results = fetch_all_dashboard_data(session, days)
 
+# Render one section per surface (Snowsight, CLI, Desktop)
 for surface in USAGE_VIEWS:
     st.subheader(f"{surface} Usage")
 
-    # Get summary
+    # Extract the single-row summary for headline metrics
     summary_result = results.get(f"{surface}_summary")
     if isinstance(summary_result, Exception):
         st.error(f"Failed to query {surface} summary: {summary_result}")
@@ -230,7 +236,7 @@ for surface in USAGE_VIEWS:
 
     metric_cols = st.columns(7)
 
-    # Build sparkline data from daily stats if available
+    # Build sparkline arrays from daily stats to show trends inside metric cards
     stats_result = results.get(f"{surface}_stats")
     spark_data = {}
     if not isinstance(stats_result, Exception) and stats_result is not None and not stats_result.empty:
@@ -263,7 +269,7 @@ for surface in USAGE_VIEWS:
     with metric_cols[6]:
         st.metric("Total Requests", f"{total_requests:,}", chart_data=spark_data.get("total_calls"), chart_type="area", border=True, help="Total number of Cortex Code requests in the period.")
 
-    # Get daily stats
+    # Get daily stats for the time-series line chart
     stats_result = results.get(f"{surface}_stats")
     if isinstance(stats_result, Exception):
         st.error(f"Failed to load daily chart for {surface}: {stats_result}")
@@ -272,6 +278,7 @@ for surface in USAGE_VIEWS:
     stats_df = stats_result
     if stats_df is not None and not stats_df.empty:
         try:
+            # Map column names case-insensitively (Snowflake returns uppercase)
             col_lower = {c.lower(): c for c in stats_df.columns}
             date_col = col_lower.get("usage_date", "USAGE_DATE")
             avg_col = col_lower.get("avg_credits", "AVG_CREDITS")
@@ -282,6 +289,7 @@ for surface in USAGE_VIEWS:
             users_col = col_lower.get("active_users", "ACTIVE_USERS")
             calls_col = col_lower.get("total_calls", None)
 
+            # Build chart DataFrame with friendly column names
             chart_df = stats_df[[date_col, avg_col, median_col, min_col, max_col]].copy()
             chart_df = chart_df.rename(columns={
                 date_col: "Date",
