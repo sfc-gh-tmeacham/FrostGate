@@ -137,7 +137,7 @@ def fetch_all_dashboard_data(_session, days):
 
 # --- Page layout ---
 
-st.title("Usage Dashboard")
+st.title(":material/bar_chart: Usage Dashboard")
 st.caption("Daily AI credit usage statistics across Cortex Code surfaces")
 st.info(
     "This dashboard shows estimated AI credit consumption from Cortex Code across Snowsight, CLI, and Desktop. "

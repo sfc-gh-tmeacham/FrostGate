@@ -244,7 +244,7 @@ def fetch_top_users(_session, days):
 
 # --- Page layout ---
 
-st.title("Top Users")
+st.title(":material/bolt: Top Users")
 st.caption("Top 20 users by AI credit consumption across Cortex Code surfaces")
 st.info(
     "Identify the highest-consuming users by estimated daily AI credits. "

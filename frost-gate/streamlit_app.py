@@ -23,17 +23,23 @@ st.set_page_config(page_title="FrostGate", page_icon="\u2744\ufe0f", layout="wid
 # TTL is configurable via env var to control session refresh frequency.
 conn = st.connection("snowflake", ttl=os.getenv("SNOWFLAKE_CONNECTION_TTL"))
 
-# Store Snowpark session and current user in session_state so all pages can access them
+# Store Snowpark session in session_state so all pages can access it
 st.session_state["session"] = conn.session()
-st.session_state["current_user"] = conn.session().sql("SELECT CURRENT_USER()").collect()[0][0]
+
+# Fire startup queries asynchronously in parallel
+_user_job = conn.session().sql("SELECT CURRENT_USER()").collect_nowait()
+_role_job = conn.session().sql("SELECT CURRENT_ROLE()").collect_nowait()
+_priv_job = conn.session().sql(
+    "SELECT 1 FROM SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY LIMIT 0"
+).collect_nowait()
+
+st.session_state["current_user"] = _user_job.result()[0][0]
 logger.info("Session established for user: %s", st.session_state["current_user"])
 
 # Verify the user has sufficient privileges (ACCOUNTADMIN or equivalent)
 try:
-    current_role = conn.session().sql("SELECT CURRENT_ROLE()").collect()[0][0]
-    conn.session().sql(
-        "SELECT 1 FROM SNOWFLAKE.ACCOUNT_USAGE.CORTEX_CODE_SNOWSIGHT_USAGE_HISTORY LIMIT 0"
-    ).collect()
+    current_role = _role_job.result()[0][0]
+    _priv_job.result()
 except Exception:
     st.error(
         f"**Insufficient privileges.** Your current role (`{current_role}`) does not have access "
@@ -51,7 +57,7 @@ page = st.navigation({
     ":material/ac_unit: FrostGate": [
         st.Page("app_pages/home.py", title="Home", icon=":material/home:", default=True),
         st.Page("app_pages/dashboard.py", title="Usage Dashboard", icon=":material/bar_chart:"),
-        st.Page("app_pages/top_users.py", title="Top Users", icon=":material/leaderboard:"),
+        st.Page("app_pages/top_users.py", title="Top Users", icon=":material/bolt:"),
         st.Page("app_pages/account_limits.py", title="Account Limits", icon=":material/tune:"),
         st.Page("app_pages/user_limits.py", title="User Limits", icon=":material/person:"),
         st.Page("app_pages/bulk_update.py", title="Bulk User Update", icon=":material/group:"),

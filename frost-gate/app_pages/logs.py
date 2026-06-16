@@ -15,7 +15,8 @@ session = st.session_state["session"]
 def get_event_table() -> str | None:
     """Auto-detect the account's event table from the EVENT_TABLE parameter."""
     try:
-        rows = session.sql("SHOW PARAMETERS LIKE 'EVENT_TABLE' IN ACCOUNT").collect()
+        job = session.sql("SHOW PARAMETERS LIKE 'EVENT_TABLE' IN ACCOUNT").collect_nowait()
+        rows = job.result()
         for row in rows:
             row_dict = row.as_dict()
             val = row_dict.get("value") or row_dict.get("VALUE", "")
@@ -78,7 +79,7 @@ def render_log_table(df: pd.DataFrame):
 
 # --- Page layout ---
 
-st.title("Logs")
+st.title(":material/terminal: Logs")
 st.markdown("View application logs from the account's event table.")
 
 event_table = get_event_table()

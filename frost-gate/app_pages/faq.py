@@ -6,7 +6,7 @@ Common questions and solutions for FrostGate administrators.
 import streamlit as st
 
 
-st.title("FAQs & Troubleshooting")
+st.title(":material/help: FAQs & Troubleshooting")
 st.markdown("Common questions and solutions for managing Cortex Code AI credit limits and interface access.")
 
 st.divider()

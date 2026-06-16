@@ -18,10 +18,18 @@ session = st.session_state["session"]
 def get_user_details(_session, username):
     """Fetch user properties via DESCRIBE USER and last login via SHOW USERS.
 
+    Uses collect_nowait() for parallel async execution.
     Returns a dict with display_name, email, default_role, default_warehouse, disabled, type, last_login.
     """
     try:
-        rows = _session.sql(f'DESCRIBE USER "{username}"').collect()
+        # Fire both queries asynchronously
+        safe_user = username.replace('"', '""')
+        safe_like = username.replace("'", "''")
+        describe_job = _session.sql(f'DESCRIBE USER "{safe_user}"').collect_nowait()
+        show_job = _session.sql(f"SHOW USERS LIKE '{safe_like}'").collect_nowait()
+
+        # Collect DESCRIBE USER result
+        rows = describe_job.result()
         props = {}
         for row in rows:
             row_dict = row.as_dict()
@@ -29,10 +37,10 @@ def get_user_details(_session, username):
             prop_value = row_dict.get("value", None)
             props[prop_name] = prop_value
 
-        # Get last login from SHOW USERS
+        # Collect SHOW USERS result for last login
         last_login = "—"
         try:
-            user_rows = _session.sql(f"SHOW USERS LIKE '{username}'").collect()
+            user_rows = show_job.result()
             if user_rows:
                 user_dict = normalize_row(user_rows[0])
                 raw_login = user_dict.get("last_success_login", None)
@@ -61,9 +69,35 @@ def get_user_details(_session, username):
 
 
 def get_user_params(username):
-    """Fetch Cortex Code credit limit parameters for a specific user."""
+    """Fetch Cortex Code credit limit parameters for a specific user.
+
+    Uses a single SHOW PARAMETERS query with wildcard to get all 3 params
+    in one round-trip instead of 3 separate queries.
+    """
     safe_user = username.replace('"', '""')
-    return fetch_params_async(session, f'IN USER "{safe_user}"')
+    job = session.sql(
+        f"""SHOW PARAMETERS LIKE 'CORTEX_CODE_%_DAILY_EST_CREDIT_LIMIT_PER_USER' IN USER "{safe_user}" """
+    ).collect_nowait()
+    rows = job.result()
+
+    # Map param key names back to surface labels
+    param_to_label = {v: k for k, v in PARAMS.items()}
+    results = {}
+    for row in rows:
+        rd = normalize_row(row)
+        param = rd.get("key", "")
+        label = param_to_label.get(param)
+        if label:
+            value = str(rd.get("value", "-1"))
+            level = str(rd.get("level", "")).upper()
+            results[label] = {"value": value, "level": level, "param": param}
+
+    # Fill in any missing params with defaults
+    for label, param in PARAMS.items():
+        if label not in results:
+            results[label] = {"value": "-1", "level": "DEFAULT", "param": param}
+
+    return results
 
 
 
@@ -144,7 +178,7 @@ def fetch_user_usage(_session, user, days):
 
 # --- Page layout ---
 
-st.title("User-Level Limits")
+st.title(":material/person: User-Level Limits")
 st.markdown("User-level settings **override** account-level defaults for that user.")
 st.info(
     "Set per-user daily AI AI credit limits to override the account default. "

@@ -14,7 +14,7 @@ session = st.session_state["session"]
 
 # --- Page layout ---
 
-st.title("Account-Level Limits")
+st.title(":material/tune: Account-Level Limits")
 st.markdown("These apply to **all users** unless overridden at the user level.")
 st.info(
     "Account-level limits set the default daily AI credit cap for all users on each Cortex Code surface. "

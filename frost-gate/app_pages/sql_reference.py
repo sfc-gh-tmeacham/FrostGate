@@ -7,7 +7,7 @@ equivalent SQL commands an admin would run in a worksheet.
 
 import streamlit as st
 
-st.title("SQL Reference")
+st.title(":material/code: SQL Reference")
 st.info(
     "These are the SQL commands that FrostGate runs behind the scenes. "
     "Use them as a reference for manual operations, scripting, or troubleshooting.",

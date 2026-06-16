@@ -67,10 +67,11 @@ def confirm_single_user(username: str, chosen_label: str, chosen_values: list[st
             safe_user = username.replace('"', '""')
             try:
                 if chosen_values == ["ALL"]:
-                    session.sql(f'ALTER USER "{safe_user}" UNSET ALLOWED_INTERFACES').collect()
+                    job = session.sql(f'ALTER USER "{safe_user}" UNSET ALLOWED_INTERFACES').collect_nowait()
                 else:
                     iface_list = ", ".join(f"'{v}'" for v in chosen_values)
-                    session.sql(f'ALTER USER "{safe_user}" SET ALLOWED_INTERFACES = ({iface_list})').collect()
+                    job = session.sql(f'ALTER USER "{safe_user}" SET ALLOWED_INTERFACES = ({iface_list})').collect_nowait()
+                job.result()
                 app_user = st.session_state.get("current_user", "UNKNOWN")
                 logger.info("[%s] Set interfaces for %s: %s", app_user, username, chosen_values)
                 st.success(f"Interface access for **{username}** set to: **{chosen_label}**")
@@ -93,15 +94,20 @@ def confirm_bulk_update(users: list[str], chosen_label: str, chosen_values: list
     with col_yes:
         if st.button("Confirm", type="primary", icon=":material/check_circle:", use_container_width=True, key="bulk_confirm_yes"):
             app_user = st.session_state.get("current_user", "UNKNOWN")
-            changes = []
+            # Fire all ALTER USER statements asynchronously
+            jobs = {}
             for user in users:
                 safe_user = user.replace('"', '""')
+                if chosen_values == ["ALL"]:
+                    jobs[user] = session.sql(f'ALTER USER "{safe_user}" UNSET ALLOWED_INTERFACES').collect_nowait()
+                else:
+                    iface_list = ", ".join(f"'{v}'" for v in chosen_values)
+                    jobs[user] = session.sql(f'ALTER USER "{safe_user}" SET ALLOWED_INTERFACES = ({iface_list})').collect_nowait()
+            # Collect results
+            changes = []
+            for user, job in jobs.items():
                 try:
-                    if chosen_values == ["ALL"]:
-                        session.sql(f'ALTER USER "{safe_user}" UNSET ALLOWED_INTERFACES').collect()
-                    else:
-                        iface_list = ", ".join(f"'{v}'" for v in chosen_values)
-                        session.sql(f'ALTER USER "{safe_user}" SET ALLOWED_INTERFACES = ({iface_list})').collect()
+                    job.result()
                     changes.append(user)
                 except Exception as e:
                     st.error(f"Failed to set interfaces for {user}: {e}")
@@ -113,7 +119,7 @@ def confirm_bulk_update(users: list[str], chosen_label: str, chosen_values: list
         if st.button("Cancel", type="secondary", use_container_width=True, key="bulk_confirm_no"):
             st.rerun()
 
-st.title("Interface Access")
+st.title(":material/devices: Interface Access")
 st.markdown("Control which Snowflake interfaces each user is allowed to access.")
 st.info(
     "The `ALLOWED_INTERFACES` user property controls which interfaces a user can access. "

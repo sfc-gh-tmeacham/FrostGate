@@ -42,6 +42,8 @@ TIME_PERIODS: dict[str, int] = {
 def get_param_value(session: Session, sql: str) -> dict[str, Any] | None:
     """Execute a SHOW PARAMETERS query and return the first row as a dict.
 
+    Uses collect_nowait() for async execution.
+
     Args:
         session: Active Snowpark session.
         sql: The SHOW PARAMETERS SQL statement to execute.
@@ -49,7 +51,8 @@ def get_param_value(session: Session, sql: str) -> dict[str, Any] | None:
     Returns:
         A dict with lowercase keys from the result row, or None if empty.
     """
-    rows = session.sql(sql).collect()
+    job = session.sql(sql).collect_nowait()
+    rows = job.result()
     if not rows:
         return None
     row = rows[0].as_dict()
@@ -162,25 +165,31 @@ def apply_limit_action(
     unset_actions = {"Unset (unlimited)", "Unset (inherit account)"}
     if action in unset_actions:
         logger.info("[%s] Unsetting %s on %s", app_user, param, alter_target)
-        session.sql(f"ALTER {alter_target} UNSET {param}").collect()
+        job = session.sql(f"ALTER {alter_target} UNSET {param}").collect_nowait()
+        job.result()
         return f"**{label}**: unset (unlimited)"
     elif action == "Set unlimited":
         logger.info("[%s] Setting %s = -1 on %s", app_user, param, alter_target)
-        session.sql(f"ALTER {alter_target} SET {param} = -1").collect()
+        job = session.sql(f"ALTER {alter_target} SET {param} = -1").collect_nowait()
+        job.result()
         return f"**{label}**: set to unlimited (-1)"
     elif action == "Block usage":
         logger.info("[%s] Setting %s = 0 on %s", app_user, param, alter_target)
-        session.sql(f"ALTER {alter_target} SET {param} = 0").collect()
+        job = session.sql(f"ALTER {alter_target} SET {param} = 0").collect_nowait()
+        job.result()
         return f"**{label}**: blocked (0)"
     else:
         logger.info("[%s] Setting %s = %d on %s", app_user, param, int(value), alter_target)
-        session.sql(f"ALTER {alter_target} SET {param} = {int(value)}").collect()
+        job = session.sql(f"ALTER {alter_target} SET {param} = {int(value)}").collect_nowait()
+        job.result()
         return f"**{label}**: set to {int(value)} AI credits/day"
 
 
 @st.cache_data(ttl=86400)
 def get_user_list(_session: Session) -> list[str]:
     """Fetch a sorted list of all usernames in the account.
+
+    Uses collect_nowait() for async execution.
 
     Args:
         _session: Snowpark session (underscore prefix for st.cache_data).
@@ -189,7 +198,10 @@ def get_user_list(_session: Session) -> list[str]:
         Sorted list of user name strings.
     """
     logger.info("Fetching user list")
-    df = _session.sql("SHOW USERS").to_pandas()
+    job = _session.sql("SHOW USERS").collect_nowait()
+    rows = job.result()
+    import pandas as pd
+    df = pd.DataFrame([r.as_dict() for r in rows])
     col_map: dict[str, str] = {c.lower(): c for c in df.columns}
     name_col = col_map.get("name", df.columns[0])
     users: list[str] = sorted(df[name_col].tolist())
@@ -200,6 +212,8 @@ def get_user_list(_session: Session) -> list[str]:
 def get_users_df(_session: Session):
     """Fetch user details from the account as a DataFrame.
 
+    Uses collect_nowait() to run timezone and user queries in parallel.
+
     Args:
         _session: Active Snowpark session.
 
@@ -209,9 +223,13 @@ def get_users_df(_session: Session):
     """
     import pandas as pd
 
+    # Fire both queries asynchronously
+    tz_job = _session.sql("SHOW PARAMETERS LIKE 'TIMEZONE' IN ACCOUNT").collect_nowait()
+    users_job = _session.sql("SHOW USERS").collect_nowait()
+
     # Get the account's local timezone
-    tz_rows = _session.sql("SHOW PARAMETERS LIKE 'TIMEZONE' IN ACCOUNT").collect()
     account_tz = "UTC"
+    tz_rows = tz_job.result()
     for row in tz_rows:
         row_dict = row.as_dict()
         val = row_dict.get("value") or row_dict.get("VALUE", "")
@@ -219,7 +237,8 @@ def get_users_df(_session: Session):
             account_tz = val
             break
 
-    df = pd.DataFrame([r.as_dict() for r in _session.sql("SHOW USERS").collect()])
+    user_rows = users_job.result()
+    df = pd.DataFrame([r.as_dict() for r in user_rows])
     col_map = {c.lower(): c for c in df.columns}
     result = pd.DataFrame()
     result["User"] = df[col_map.get("name", "name")]
